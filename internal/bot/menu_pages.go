@@ -121,7 +121,7 @@ func (b *BotInstance) instanceOverviewMenuPage(chatID int64, messageID int) tgbo
 	menuTitle += fmt.Sprintf("  上传: %s\n", prometheus.FormatBytesPerSecond(uploadRate))
 	menuTitle += fmt.Sprintf("  下载: %s\n", prometheus.FormatBytesPerSecond(downloadRate))
 
-	cpuUsage, memoryUsage, diskUsage, err := b.PrometheusClient.FetchResourceMetrics(model.Metric{}, "10m", now)
+	cpuUsage, memoryUsage, diskUsage, _, _, _, _, err := b.PrometheusClient.FetchResourceMetrics(model.Metric{}, "10m", now)
 	if err != nil {
 		log.Printf("failed to get resource metrics: %v", err)
 	}
@@ -293,4 +293,3 @@ func (b *BotInstance) otherMenuPage(chatID int64, messageID int) tgbotapi.Chatta
 		return editMsg
 	}
 }
-
