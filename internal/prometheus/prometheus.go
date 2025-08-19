@@ -135,15 +135,15 @@ func (c *Client) GetInstanceInfo(labels model.Metric) (string, error) {
 	info += fmt.Sprintf("  上传: %s\n", FormatBytesPerSecond(uploadRate))
 	info += fmt.Sprintf("  下载: %s\n", FormatBytesPerSecond(downloadRate))
 
-	cpuUsage, memoryUsage, diskUsage, err := c.FetchResourceMetrics(labels, duration, now)
+	cpuUsage, memoryUsage, diskUsage, diskTotal, diskAvaileble, memTotal, memAvaileble, err := c.FetchResourceMetrics(labels, duration, now)
 	if err != nil {
 		log.Printf("Failed to fetch resource metrics: %v", err)
 	}
 
 	info += "\n<b>资源使用情况:</b>\n"
 	info += fmt.Sprintf("  CPU 使用率: %.2f%%\n", cpuUsage)
-	info += fmt.Sprintf("  内存使用率: %.2f%%\n", memoryUsage)
-	info += fmt.Sprintf("  磁盘使用率: %.2f%%\n", diskUsage)
+	info += fmt.Sprintf("  内存使用率: %.2f%%(共: %s,可用: %s)\n", memoryUsage, FormatBytes(memTotal), FormatBytes(memAvaileble))
+	info += fmt.Sprintf("  磁盘使用率: %.2f%%(共: %s,可用: %s)\n", diskUsage, FormatBytes(diskTotal), FormatBytes(diskAvaileble))
 
 	return info, nil
 }
@@ -277,41 +277,66 @@ func (c *Client) GetNaturalMonthTraffic(labels model.Metric, now time.Time) (tra
 	return c.queryTrafficForDuration(labels, durationCurrentMonth, now)
 }
 
-func (c *Client) FetchResourceMetrics(labels model.Metric, duration string, now time.Time) (cpuUsage float64, memoryUsage float64, diskUsage float64, err error) {
+func (c *Client) FetchResourceMetrics(labels model.Metric, duration string, now time.Time) (cpuUsage, memoryUsage, diskUsage, diskTotal, diskAvaileble, memTotal, memAvaileble float64, err error) {
 	labelMatchers := BuildLabelMatchers(labels)
-	cpuQuery := ""
-	memoryQuery := ""
-	diskQuery := ""
+	cpuQuery := fmt.Sprintf(`avg(rate(node_cpu_seconds_total{mode!="idle"}[%s])) * 100`, duration)
+	memoryQuery := fmt.Sprintf(`(1 - avg(node_memory_MemAvailable_bytes{}) / avg(node_memory_MemTotal_bytes{}))*100`)
+	diskQuery := fmt.Sprintf(`(1 - avg(node_filesystem_avail_bytes{fstype!="rootfs"}) / avg(node_filesystem_size_bytes{fstype!="rootfs"}))*100`)
+	diskTotalQuery := fmt.Sprintf(`node_filesystem_size_bytes{fstype!="rootfs"}`)
+	diskAvailebleQuery := fmt.Sprintf(`node_filesystem_avail_bytes{fstype!="rootfs"}`)
+	memTotalQuery := fmt.Sprintf(`node_memory_MemTotal_bytes`)
+	memAvailebleQuery := fmt.Sprintf(`node_memory_MemAvailable_bytes`)
 
 	if len(labelMatchers) > 0 {
 		cpuQuery = fmt.Sprintf(`avg(rate(node_cpu_seconds_total{%s, mode!="idle"}[%s])) * 100`, labelMatchers, duration)
 		memoryQuery = fmt.Sprintf(`(1 - avg(node_memory_MemAvailable_bytes{%s}) / avg(node_memory_MemTotal_bytes{%s}))*100`, labelMatchers, labelMatchers)
 		diskQuery = fmt.Sprintf(`(1 - avg(node_filesystem_avail_bytes{%s, fstype!="rootfs"}) / avg(node_filesystem_size_bytes{%s, fstype!="rootfs"}))*100`, labelMatchers, labelMatchers)
-	} else {
-		cpuQuery = fmt.Sprintf(`avg(rate(node_cpu_seconds_total{mode!="idle"}[%s])) * 100`, duration)
-		memoryQuery = fmt.Sprintf(`(1 - avg(node_memory_MemAvailable_bytes{}) / avg(node_memory_MemTotal_bytes{}))*100`)
-		diskQuery = fmt.Sprintf(`(1 - avg(node_filesystem_avail_bytes{fstype!="rootfs"}) / avg(node_filesystem_size_bytes{fstype!="rootfs"}))*100`)
+		diskTotalQuery = fmt.Sprintf(`node_filesystem_size_bytes{%s, fstype!="rootfs"}`, labelMatchers)
+		diskAvailebleQuery = fmt.Sprintf(`node_filesystem_avail_bytes{%s, fstype!="rootfs"}`, labelMatchers)
+		memTotalQuery = fmt.Sprintf(`node_memory_MemTotal_bytes{%s}`, labelMatchers)
+		memAvailebleQuery = fmt.Sprintf(`node_memory_MemAvailable_bytes{%s}`, labelMatchers)
 	}
 
 	cpuResult, err := c.QueryPrometheus(cpuQuery, now)
 	if err != nil {
-		return 0, 0, 0, fmt.Errorf("Failed to query CPU usage: %v", err)
+		return 0, 0, 0, 0, 0, 0, 0, fmt.Errorf("Failed to query CPU usage: %v", err)
 	}
 
 	memoryResult, err := c.QueryPrometheus(memoryQuery, now)
 	if err != nil {
-		return 0, 0, 0, fmt.Errorf("Failed to query memory usage: %v", err)
+		return 0, 0, 0, 0, 0, 0, 0, fmt.Errorf("Failed to query memory usage: %v", err)
+	}
+	memTotalResult, err := c.QueryPrometheus(memTotalQuery, now)
+	if err != nil {
+		return 0, 0, 0, 0, 0, 0, 0, fmt.Errorf("Failed to query memory total: %v", err)
+	}
+	memAvailebleResult, err := c.QueryPrometheus(memAvailebleQuery, now)
+	if err != nil {
+		return 0, 0, 0, 0, 0, 0, 0, fmt.Errorf("Failed to query memory availeble: %v", err)
 	}
 
 	diskResult, err := c.QueryPrometheus(diskQuery, now)
 	if err != nil {
-		return 0, 0, 0, fmt.Errorf("Failed to query disk usage: %v", err)
+		return 0, 0, 0, 0, 0, 0, 0, fmt.Errorf("Failed to query disk usage: %v", err)
 	}
+	diskTotalResult, err := c.QueryPrometheus(diskTotalQuery, now)
+	if err != nil {
+		return 0, 0, 0, 0, 0, 0, 0, fmt.Errorf("Failed to query disk total: %v", err)
+	}
+	diskAvailebleResult, err := c.QueryPrometheus(diskAvailebleQuery, now)
+	if err != nil {
+		return 0, 0, 0, 0, 0, 0, 0, fmt.Errorf("Failed to query disk availeble: %v", err)
+	}
+
 	cpuUsage = c.GetFloatFromPromResult(cpuResult)
 	memoryUsage = c.GetFloatFromPromResult(memoryResult)
 	diskUsage = c.GetFloatFromPromResult(diskResult)
+	diskTotal = c.GetFloatFromPromResult(diskTotalResult)
+	diskAvaileble = c.GetFloatFromPromResult(diskAvailebleResult)
+	memTotal = c.GetFloatFromPromResult(memTotalResult)
+	memAvaileble = c.GetFloatFromPromResult(memAvailebleResult)
 
-	return cpuUsage, memoryUsage, diskUsage, nil
+	return cpuUsage, memoryUsage, diskUsage, diskTotal, diskAvaileble, memTotal, memAvaileble, nil
 }
 
 func (c *Client) QueryNetworkRate(labels model.Metric, now time.Time) (uploadRate float64, downloadRate float64, err error) {
@@ -471,4 +496,3 @@ func FormatBytes(bytes float64) string {
 		return fmt.Sprintf("%.2f B", bytes)
 	}
 }
-
