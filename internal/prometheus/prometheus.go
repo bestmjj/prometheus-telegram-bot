@@ -282,8 +282,8 @@ func (c *Client) FetchResourceMetrics(labels model.Metric, duration string, now 
 	cpuQuery := fmt.Sprintf(`avg(rate(node_cpu_seconds_total{mode!="idle"}[%s])) * 100`, duration)
 	memoryQuery := fmt.Sprintf(`(1 - avg(node_memory_MemAvailable_bytes{}) / avg(node_memory_MemTotal_bytes{}))*100`)
 	diskQuery := fmt.Sprintf(`(1 - avg(node_filesystem_avail_bytes{fstype!="rootfs"}) / avg(node_filesystem_size_bytes{fstype!="rootfs"}))*100`)
-	diskTotalQuery := fmt.Sprintf(`node_filesystem_size_bytes{fstype!="rootfs"}`)
-	diskAvailebleQuery := fmt.Sprintf(`node_filesystem_avail_bytes{fstype!="rootfs"}`)
+	diskTotalQuery := fmt.Sprintf(`node_filesystem_size_bytes{fstype!="rootfs",fstype=~"ext4"}`)
+	diskAvailebleQuery := fmt.Sprintf(`node_filesystem_avail_bytes{fstype!="rootfs",fstype=~"ext4"}`)
 	memTotalQuery := fmt.Sprintf(`node_memory_MemTotal_bytes`)
 	memAvailebleQuery := fmt.Sprintf(`node_memory_MemAvailable_bytes`)
 
@@ -291,12 +291,12 @@ func (c *Client) FetchResourceMetrics(labels model.Metric, duration string, now 
 		cpuQuery = fmt.Sprintf(`avg(rate(node_cpu_seconds_total{%s, mode!="idle"}[%s])) * 100`, labelMatchers, duration)
 		memoryQuery = fmt.Sprintf(`(1 - avg(node_memory_MemAvailable_bytes{%s}) / avg(node_memory_MemTotal_bytes{%s}))*100`, labelMatchers, labelMatchers)
 		diskQuery = fmt.Sprintf(`(1 - avg(node_filesystem_avail_bytes{%s, fstype!="rootfs"}) / avg(node_filesystem_size_bytes{%s, fstype!="rootfs"}))*100`, labelMatchers, labelMatchers)
-		diskTotalQuery = fmt.Sprintf(`node_filesystem_size_bytes{%s, fstype!="rootfs"}`, labelMatchers)
-		diskAvailebleQuery = fmt.Sprintf(`node_filesystem_avail_bytes{%s, fstype!="rootfs"}`, labelMatchers)
+		diskTotalQuery = fmt.Sprintf(`node_filesystem_size_bytes{%s, fstype!="rootfs",fstype=~"ext4"}`, labelMatchers)
+		diskAvailebleQuery = fmt.Sprintf(`node_filesystem_avail_bytes{%s, fstype!="rootfs",fstype=~"ext4"}`, labelMatchers)
 		memTotalQuery = fmt.Sprintf(`node_memory_MemTotal_bytes{%s}`, labelMatchers)
 		memAvailebleQuery = fmt.Sprintf(`node_memory_MemAvailable_bytes{%s}`, labelMatchers)
 	}
-
+	
 	cpuResult, err := c.QueryPrometheus(cpuQuery, now)
 	if err != nil {
 		return 0, 0, 0, 0, 0, 0, 0, fmt.Errorf("Failed to query CPU usage: %v", err)
