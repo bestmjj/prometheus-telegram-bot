@@ -144,6 +144,38 @@ func (b *BotInstance) handleCallback(callback *tgbotapi.CallbackQuery) {
 		return
 	}
 
+	// 检查是否是实例详情的回调数据
+	if strings.HasPrefix(data, "instance_detail:") {
+		instanceName := strings.TrimPrefix(data, "instance_detail:")
+		
+		// 查找实例
+		var selectedInstance model.Metric
+		allInstances := b.fetchInstancesForMenu(allInstancesMenuID)
+		for _, instance := range allInstances {
+			if string(instance["instance"]) == instanceName {
+				selectedInstance = instance
+				break
+			}
+		}
+		
+		if len(selectedInstance) == 0 {
+			b.editMessage(chatID, messageID, "找不到指定的实例，请重试。")
+			return
+		}
+
+		info, err := b.PrometheusClient.GetInstanceInfo(selectedInstance)
+		if err != nil {
+			b.editMessage(chatID, messageID, fmt.Sprintf("获取实例信息失败: %v", err))
+			return
+		}
+
+		msg := tgbotapi.NewMessage(chatID, info)
+		msg.ParseMode = "HTML"
+		b.BotAPI.Send(msg)
+		b.BotAPI.Request(tgbotapi.NewCallback(callback.ID, ""))
+		return
+	}
+
 	switch data {
 	case mainMenuID, instanceMenuID, otherMenuID, instanceOverviewMenuID:
 		b.pushMenu(data)

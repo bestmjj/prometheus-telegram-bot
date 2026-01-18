@@ -64,15 +64,14 @@ func (b *BotInstance) instanceOverviewMenuPage(chatID int64, messageID int) tgbo
 	onlineCount := len(b.fetchInstancesForMenu(onlineInstancesMenuID))
 	offlineCount := len(b.fetchInstancesForMenu(offlineInstancesMenuID))
 	menuTitle := fmt.Sprintf("<b>实例总览</b>\n\n"+
-		"<b>总共实例:</b> <a href=\"%s\">%d</a>\n"+
-		"<b>在线实例:</b> <a href=\"%s\">%d</a>\n"+
-		"<b>离线实例:</b> <a href=\"%s\">%d</a>\n",
-		b.generateCallbackURL(allInstancesMenuID), len(instances),
-		b.generateCallbackURL(onlineInstancesMenuID), onlineCount,
-		b.generateCallbackURL(offlineInstancesMenuID), offlineCount)
-	var instance model.Metric
+		"<b>总共实例:</b> %d\n"+
+		"<b>在线实例:</b> %d\n"+
+		"<b>离线实例:</b> %d\n",
+		len(instances), onlineCount, offlineCount)
 
 	now := time.Now()
+	var instance model.Metric
+
 	// 获取昨日流量
 	yesterdayTransmitBytes, yesterdayReceiveBytes, err := b.PrometheusClient.GetYesterdayTraffic(instance, now)
 	if err != nil {
@@ -82,28 +81,92 @@ func (b *BotInstance) instanceOverviewMenuPage(chatID int64, messageID int) tgbo
 	yesterdayTotalBytes := yesterdayTransmitBytes + yesterdayReceiveBytes
 
 	menuTitle += "\n<b>昨日流量:</b>\n"
-	menuTitle += fmt.Sprintf("  上传: %s\n", prometheus.FormatBytes(yesterdayTransmitBytes))
-	menuTitle += fmt.Sprintf("  下载: %s\n", prometheus.FormatBytes(yesterdayReceiveBytes))
-	menuTitle += fmt.Sprintf("  总共: %s\n", prometheus.FormatBytes(yesterdayTotalBytes))
+	
+	// 查询昨日上传流量最大的实例
+	highestUploadInstance, highestUploadValue, err := b.PrometheusClient.GetHighestUploadTrafficInstance(now)
+	if err != nil {
+		log.Printf("failed to get highest upload traffic instance: %v", err)
+		menuTitle += fmt.Sprintf("  上传: %s\n", prometheus.FormatBytes(yesterdayTransmitBytes))
+	} else if highestUploadInstance != "" {
+		menuTitle += fmt.Sprintf("  上传: %s（最多：%s (%s)）\n", prometheus.FormatBytes(yesterdayTransmitBytes), highestUploadInstance, prometheus.FormatBytes(highestUploadValue))
+	} else {
+		menuTitle += fmt.Sprintf("  上传: %s\n", prometheus.FormatBytes(yesterdayTransmitBytes))
+	}
+	
+	// 查询昨日下载流量最大的实例
+	highestDownloadInstance, highestDownloadValue, err := b.PrometheusClient.GetHighestDownloadTrafficInstance(now)
+	if err != nil {
+		log.Printf("failed to get highest download traffic instance: %v", err)
+		menuTitle += fmt.Sprintf("  下载: %s\n", prometheus.FormatBytes(yesterdayReceiveBytes))
+	} else if highestDownloadInstance != "" {
+		menuTitle += fmt.Sprintf("  下载: %s（最多：%s (%s)）\n", prometheus.FormatBytes(yesterdayReceiveBytes), highestDownloadInstance, prometheus.FormatBytes(highestDownloadValue))
+	} else {
+		menuTitle += fmt.Sprintf("  下载: %s\n", prometheus.FormatBytes(yesterdayReceiveBytes))
+	}
+	
+	// 查询昨日总流量最大的实例
+	highestTotalInstance, highestTotalValue, err := b.PrometheusClient.GetHighestTotalTrafficInstance(now)
+	if err != nil {
+		log.Printf("failed to get highest total traffic instance: %v", err)
+		menuTitle += fmt.Sprintf("  总共: %s\n", prometheus.FormatBytes(yesterdayTotalBytes))
+	} else if highestTotalInstance != "" {
+		menuTitle += fmt.Sprintf("  总共: %s（最多：%s (%s)）\n", prometheus.FormatBytes(yesterdayTotalBytes), highestTotalInstance, prometheus.FormatBytes(highestTotalValue))
+	} else {
+		menuTitle += fmt.Sprintf("  总共: %s\n", prometheus.FormatBytes(yesterdayTotalBytes))
+	}
 
+	// Get daily traffic
 	transmitBytes, receiveBytes, err := b.PrometheusClient.GetDailyTraffic(instance, now)
 	if err != nil {
 		errStr := fmt.Sprintf("failed to get daily traffic for all instance %v", err)
 		return tgbotapi.NewMessage(chatID, errStr)
 	}
-	totalBytes := transmitBytes + receiveBytes
 
+	// Get network rates
 	uploadRate, downloadRate, err := b.PrometheusClient.QueryNetworkRate(instance, now)
 	if err != nil {
 		errStr := fmt.Sprintf("failed to get network rate for all instance %v", err)
 		return tgbotapi.NewMessage(chatID, errStr)
 	}
 
+	// Add daily traffic with highest values
 	menuTitle += "\n<b>日流量:</b>\n"
-	menuTitle += fmt.Sprintf("  上传: %s\n", prometheus.FormatBytes(transmitBytes))
-	menuTitle += fmt.Sprintf("  下载: %s\n", prometheus.FormatBytes(receiveBytes))
-	menuTitle += fmt.Sprintf("  总共: %s\n", prometheus.FormatBytes(totalBytes))
+	dailyTotalBytes := transmitBytes + receiveBytes
+	
+	// Daily upload traffic
+	dailyTransmitInstance, dailyTransmitValue, err := b.PrometheusClient.GetHighestDailyUploadTrafficInstance(now)
+	if err != nil {
+		log.Printf("failed to get highest daily upload traffic instance: %v", err)
+		menuTitle += fmt.Sprintf("  上传: %s\n", prometheus.FormatBytes(transmitBytes))
+	} else if dailyTransmitInstance != "" {
+		menuTitle += fmt.Sprintf("  上传: %s（最多：%s (%s)）\n", prometheus.FormatBytes(transmitBytes), dailyTransmitInstance, prometheus.FormatBytes(dailyTransmitValue))
+	} else {
+		menuTitle += fmt.Sprintf("  上传: %s\n", prometheus.FormatBytes(transmitBytes))
+	}
 
+	// Daily receive traffic
+	dailyReceiveInstance, dailyReceiveValue, err := b.PrometheusClient.GetHighestDailyDownloadTrafficInstance(now)
+	if err != nil {
+		log.Printf("failed to get highest daily download traffic instance: %v", err)
+		menuTitle += fmt.Sprintf("  下载: %s\n", prometheus.FormatBytes(receiveBytes))
+	} else if dailyReceiveInstance != "" {
+		menuTitle += fmt.Sprintf("  下载: %s（最多：%s (%s)）\n", prometheus.FormatBytes(receiveBytes), dailyReceiveInstance, prometheus.FormatBytes(dailyReceiveValue))
+	} else {
+		menuTitle += fmt.Sprintf("  下载: %s\n", prometheus.FormatBytes(receiveBytes))
+	}
+
+	// Daily total traffic
+	dailyTotalInstance, dailyTotalValue, err := b.PrometheusClient.GetHighestDailyTotalTrafficInstance(now)
+	if err != nil {
+		log.Printf("failed to get highest daily total traffic instance: %v", err)
+		menuTitle += fmt.Sprintf("  总共: %s\n", prometheus.FormatBytes(dailyTotalBytes))
+	} else if dailyTotalInstance != "" {
+		menuTitle += fmt.Sprintf("  总共: %s（最多：%s (%s)）\n", prometheus.FormatBytes(dailyTotalBytes), dailyTotalInstance, prometheus.FormatBytes(dailyTotalValue))
+	} else {
+		menuTitle += fmt.Sprintf("  总共: %s\n", prometheus.FormatBytes(dailyTotalBytes))
+	}
+
+	// Get monthly traffic
 	naturalMonthTransmitBytes, naturalMonthReceiveBytes, err := b.PrometheusClient.GetNaturalMonthTraffic(instance, now)
 	if err != nil {
 		errStr := fmt.Sprintf("failed to get monthly traffic for all instance %v", err)
@@ -112,25 +175,111 @@ func (b *BotInstance) instanceOverviewMenuPage(chatID int64, messageID int) tgbo
 
 	naturalMonthTotalBytes := naturalMonthTransmitBytes + naturalMonthReceiveBytes
 
+	// Add monthly traffic with highest values
 	menuTitle += "\n<b>月流量:</b>\n"
-	menuTitle += fmt.Sprintf("  上传: %s\n", prometheus.FormatBytes(naturalMonthTransmitBytes))
-	menuTitle += fmt.Sprintf("  下载: %s\n", prometheus.FormatBytes(naturalMonthReceiveBytes))
-	menuTitle += fmt.Sprintf("  总共: %s\n", prometheus.FormatBytes(naturalMonthTotalBytes))
+	
+	// Monthly upload traffic
+	monthlyTransmitInstance, monthlyTransmitValue, err := b.PrometheusClient.GetHighestMonthlyUploadTrafficInstance(now)
+	if err != nil {
+		log.Printf("failed to get highest monthly upload traffic instance: %v", err)
+		menuTitle += fmt.Sprintf("  上传: %s\n", prometheus.FormatBytes(naturalMonthTransmitBytes))
+	} else if monthlyTransmitInstance != "" {
+		menuTitle += fmt.Sprintf("  上传: %s（最多：%s (%s)）\n", prometheus.FormatBytes(naturalMonthTransmitBytes), monthlyTransmitInstance, prometheus.FormatBytes(monthlyTransmitValue))
+	} else {
+		menuTitle += fmt.Sprintf("  上传: %s\n", prometheus.FormatBytes(naturalMonthTransmitBytes))
+	}
 
+	// Monthly receive traffic
+	monthlyReceiveInstance, monthlyReceiveValue, err := b.PrometheusClient.GetHighestMonthlyDownloadTrafficInstance(now)
+	if err != nil {
+		log.Printf("failed to get highest monthly download traffic instance: %v", err)
+		menuTitle += fmt.Sprintf("  下载: %s\n", prometheus.FormatBytes(naturalMonthReceiveBytes))
+	} else if monthlyReceiveInstance != "" {
+		menuTitle += fmt.Sprintf("  下载: %s（最多：%s (%s)）\n", prometheus.FormatBytes(naturalMonthReceiveBytes), monthlyReceiveInstance, prometheus.FormatBytes(monthlyReceiveValue))
+	} else {
+		menuTitle += fmt.Sprintf("  下载: %s\n", prometheus.FormatBytes(naturalMonthReceiveBytes))
+	}
+
+	// Monthly total traffic
+	monthlyTotalInstance, monthlyTotalValue, err := b.PrometheusClient.GetHighestMonthlyTotalTrafficInstance(now)
+	if err != nil {
+		log.Printf("failed to get highest monthly total traffic instance: %v", err)
+		menuTitle += fmt.Sprintf("  总共: %s\n", prometheus.FormatBytes(naturalMonthTotalBytes))
+	} else if monthlyTotalInstance != "" {
+		menuTitle += fmt.Sprintf("  总共: %s（最多：%s (%s)）\n", prometheus.FormatBytes(naturalMonthTotalBytes), monthlyTotalInstance, prometheus.FormatBytes(monthlyTotalValue))
+	} else {
+		menuTitle += fmt.Sprintf("  总共: %s\n", prometheus.FormatBytes(naturalMonthTotalBytes))
+	}
+
+	// Add network rates with highest values
 	menuTitle += "\n<b>网络速率:</b>\n"
-	menuTitle += fmt.Sprintf("  上传: %s\n", prometheus.FormatBytesPerSecond(uploadRate))
-	menuTitle += fmt.Sprintf("  下载: %s\n", prometheus.FormatBytesPerSecond(downloadRate))
+	
+	// Highest upload rate
+	highestUploadRateInstance, highestUploadRateValue, err := b.PrometheusClient.GetHighestUploadRateInstance(now)
+	if err != nil {
+		log.Printf("failed to get highest upload rate instance: %v", err)
+		menuTitle += fmt.Sprintf("  上传: %s/s\n", prometheus.FormatBytesPerSecond(uploadRate))
+	} else if highestUploadRateInstance != "" {
+		menuTitle += fmt.Sprintf("  上传: %s/s（最多：%s (%s/s)）\n", prometheus.FormatBytesPerSecond(uploadRate), highestUploadRateInstance, prometheus.FormatBytesPerSecond(highestUploadRateValue))
+	} else {
+		menuTitle += fmt.Sprintf("  上传: %s/s\n", prometheus.FormatBytesPerSecond(uploadRate))
+	}
 
+	// Highest download rate
+	highestDownloadRateInstance, highestDownloadRateValue, err := b.PrometheusClient.GetHighestDownloadRateInstance(now)
+	if err != nil {
+		log.Printf("failed to get highest download rate instance: %v", err)
+		menuTitle += fmt.Sprintf("  下载: %s/s\n", prometheus.FormatBytesPerSecond(downloadRate))
+	} else if highestDownloadRateInstance != "" {
+		menuTitle += fmt.Sprintf("  下载: %s/s（最多：%s (%s/s)）\n", prometheus.FormatBytesPerSecond(downloadRate), highestDownloadRateInstance, prometheus.FormatBytesPerSecond(highestDownloadRateValue))
+	} else {
+		menuTitle += fmt.Sprintf("  下载: %s/s\n", prometheus.FormatBytesPerSecond(downloadRate))
+	}
+
+	// Resource metrics with highest values
 	cpuUsage, memoryUsage, diskUsage, _, _, _, _, err := b.PrometheusClient.FetchResourceMetrics(model.Metric{}, "10m", now)
 	if err != nil {
 		log.Printf("failed to get resource metrics: %v", err)
 	}
 	menuTitle += "\n<b>资源使用情况:</b>\n"
-	menuTitle += fmt.Sprintf("  CPU 使用率: %.2f%%\n", cpuUsage)
-	menuTitle += fmt.Sprintf("  内存使用率: %.2f%%\n", memoryUsage)
-	menuTitle += fmt.Sprintf("  磁盘使用率: %.2f%%\n", diskUsage)
+	
+	// Highest CPU usage
+	highestCpuInstance, highestCpuValue, err := b.PrometheusClient.GetHighestCpuUsageInstance(now)
+	if err != nil {
+		log.Printf("failed to get highest CPU usage instance: %v", err)
+		menuTitle += fmt.Sprintf("  CPU 使用率: %.2f%%\n", cpuUsage)
+	} else if highestCpuInstance != "" {
+		menuTitle += fmt.Sprintf("  CPU 使用率: %.2f%%（最多：%s (%.2f%%)）\n", cpuUsage, highestCpuInstance, highestCpuValue)
+	} else {
+		menuTitle += fmt.Sprintf("  CPU 使用率: %.2f%%\n", cpuUsage)
+	}
+	
+	// Highest memory usage
+	highestMemoryInstance, highestMemoryValue, err2 := b.PrometheusClient.GetHighestMemoryUsageInstance(now)
+	if err2 != nil {
+		log.Printf("failed to get highest memory usage instance: %v", err2)
+		menuTitle += fmt.Sprintf("  内存使用率: %.2f%%\n", memoryUsage)
+	} else if highestMemoryInstance != "" {
+		menuTitle += fmt.Sprintf("  内存使用率: %.2f%%（最多：%s (%.2f%%)）\n", memoryUsage, highestMemoryInstance, highestMemoryValue)
+	} else {
+		menuTitle += fmt.Sprintf("  内存使用率: %.2f%%\n", memoryUsage)
+	}
+	
+	// Highest disk usage
+	highestDiskInstance, highestDiskValue, err3 := b.PrometheusClient.GetHighestDiskUsageInstance(now)
+	if err3 != nil {
+		log.Printf("failed to get highest disk usage instance: %v", err3)
+		menuTitle += fmt.Sprintf("  磁盘使用率: %.2f%%\n", diskUsage)
+	} else if highestDiskInstance != "" {
+		menuTitle += fmt.Sprintf("  磁盘使用率: %.2f%%（最多：%s (%.2f%%)）\n", diskUsage, highestDiskInstance, highestDiskValue)
+	} else {
+		menuTitle += fmt.Sprintf("  磁盘使用率: %.2f%%\n", diskUsage)
+	}
 
 	menuItems := []MenuItem{
+		{Text: "全部实例", CallbackData: allInstancesMenuID},
+		{Text: "在线实例", CallbackData: onlineInstancesMenuID},
+		{Text: "离线实例", CallbackData: offlineInstancesMenuID},
 		{Text: "返回", CallbackData: b.getPreviousMenuID()},
 		{Text: "返回主菜单", CallbackData: mainMenuID},
 	}

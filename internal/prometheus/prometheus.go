@@ -50,6 +50,7 @@ func (c *Client) FetchInstances(query string) ([]model.Metric, error) {
 func (c *Client) GetInstanceInfo(labels model.Metric) (string, error) {
 	now := time.Now()
 	expiryStr := string(labels["expiry"])
+	resetDayStr := string(labels["reset_day"])
 	priceStr := string(labels["price"])
 	infoStr := string(labels["info"])
 	cycleStr := string(labels["cycle"])
@@ -58,10 +59,140 @@ func (c *Client) GetInstanceInfo(labels model.Metric) (string, error) {
 	if err != nil {
 		return "", fmt.Errorf("Failed to parse expiry date: %v", err)
 	}
-	lastMonthExpiry := calculateLastMonthExpiry(expiryTime, now)
-	lastMonthExpiryStr := fmt.Sprintf("%d-%02d-%02d", lastMonthExpiry.Year(), lastMonthExpiry.Month(), lastMonthExpiry.Day())
-	daysDiff := calculateDaysDifference(now, lastMonthExpiry)
-	duration := formatDuration(time.Duration(daysDiff*24) * time.Hour)
+
+	var lastResetDate time.Time
+	var nextResetDate time.Time
+	var resetDateStr string
+	var duration string
+
+	if resetDayStr != "" {
+		// 如果有固定的重置日，则使用该重置日
+		resetDay, err := time.Parse("2006-01-02", resetDayStr)
+		if err != nil {
+			return "", fmt.Errorf("Failed to parse reset day: %v", err)
+		}
+
+		// 从重置日中提取日期
+		resetDayOfMonth := resetDay.Day()
+
+		// 计算上一个重置日
+		year := now.Year()
+		month := now.Month()
+
+		// 首先尝试当前月份的重置日
+		currentMonthResetDate := time.Date(year, month, resetDayOfMonth, 0, 0, 0, 0, time.Local)
+
+		if currentMonthResetDate.Before(now) || currentMonthResetDate.Equal(now.Truncate(24*time.Hour)) {
+			// 如果当前月的重置日已经过了，上一个重置日就是当前月的重置日
+			lastResetDate = currentMonthResetDate
+		} else {
+			// 如果当前月的重置日还没到，上一个重置日是上个月的重置日
+			var lastMonthYear int
+			var lastMonthMonth time.Month
+			if month-1 < 1 {
+				lastMonthYear = year - 1
+				lastMonthMonth = 12
+			} else {
+				lastMonthYear = year
+				lastMonthMonth = month - 1
+			}
+			lastResetDate = time.Date(lastMonthYear, lastMonthMonth, resetDayOfMonth, 0, 0, 0, 0, time.Local)
+
+			// 检查日期有效性
+			lastDayOfMonth := time.Date(lastResetDate.Year(), lastResetDate.Month()+1, 0, 0, 0, 0, 0, time.Local).Day()
+			if resetDayOfMonth > lastDayOfMonth {
+				lastResetDate = time.Date(lastResetDate.Year(), lastResetDate.Month(), lastDayOfMonth, 0, 0, 0, 0, time.Local)
+			}
+		}
+
+		// 计算下一个重置日
+		if currentMonthResetDate.After(now) {
+			// 如果当前月的重置日还没到，那就是下一个重置日
+			nextResetDate = currentMonthResetDate
+		} else {
+			// 如果当前月的重置日已经过了，那么下个重置日是下个月的重置日
+			var nextMonthYear int
+			var nextMonthMonth time.Month
+			if month+1 > 12 {
+				nextMonthYear = year + 1
+				nextMonthMonth = 1
+			} else {
+				nextMonthYear = year
+				nextMonthMonth = month + 1
+			}
+			nextResetDate = time.Date(nextMonthYear, nextMonthMonth, resetDayOfMonth, 0, 0, 0, 0, time.Local)
+
+			// 检查日期有效性
+			lastDayOfMonth := time.Date(nextResetDate.Year(), nextResetDate.Month()+1, 0, 0, 0, 0, 0, time.Local).Day()
+			if resetDayOfMonth > lastDayOfMonth {
+				nextResetDate = time.Date(nextResetDate.Year(), nextResetDate.Month(), lastDayOfMonth, 0, 0, 0, 0, time.Local)
+			}
+		}
+
+		// 计算从上一个重置日到现在的时间差
+		daysDiff := calculateDaysDifference(now, lastResetDate)
+		duration = formatDuration(time.Duration(daysDiff*24) * time.Hour)
+		resetDateStr = fmt.Sprintf("%d-%02d-%02d", nextResetDate.Year(), nextResetDate.Month(), nextResetDate.Day())
+	} else {
+		// 如果没有固定的重置日，使用到期日作为参考
+		expiryDay := expiryTime.Day()
+		year := now.Year()
+		month := now.Month()
+
+		// 计算上一个重置日（使用到期日的日期作为周期日）
+		currentMonthExpiryDate := time.Date(year, month, expiryDay, 0, 0, 0, 0, time.Local)
+
+		if currentMonthExpiryDate.Before(now) || currentMonthExpiryDate.Equal(now.Truncate(24*time.Hour)) {
+			// 如果当前月的到期日已经过了，上一个重置日就是当前月的到期日
+			lastResetDate = currentMonthExpiryDate
+		} else {
+			// 如果当前月的到期日还没到，上一个重置日是上个月的对应日期
+			var lastMonthYear int
+			var lastMonthMonth time.Month
+			if month-1 < 1 {
+				lastMonthYear = year - 1
+				lastMonthMonth = 12
+			} else {
+				lastMonthYear = year
+				lastMonthMonth = month - 1
+			}
+			lastResetDate = time.Date(lastMonthYear, lastMonthMonth, expiryDay, 0, 0, 0, 0, time.Local)
+
+			// 检查日期有效性
+			lastDayOfMonth := time.Date(lastResetDate.Year(), lastResetDate.Month()+1, 0, 0, 0, 0, 0, time.Local).Day()
+			if expiryDay > lastDayOfMonth {
+				lastResetDate = time.Date(lastResetDate.Year(), lastResetDate.Month(), lastDayOfMonth, 0, 0, 0, 0, time.Local)
+			}
+		}
+
+		// 计算下一个重置日
+		if currentMonthExpiryDate.After(now) {
+			// 如果当前月的到期日还没到，那就是下一个重置日
+			nextResetDate = currentMonthExpiryDate
+		} else {
+			// 如果当前月的到期日已经过了，那么下个重置日是下个月的到期日
+			var nextMonthYear int
+			var nextMonthMonth time.Month
+			if month+1 > 12 {
+				nextMonthYear = year + 1
+				nextMonthMonth = 1
+			} else {
+				nextMonthYear = year
+				nextMonthMonth = month + 1
+			}
+			nextResetDate = time.Date(nextMonthYear, nextMonthMonth, expiryDay, 0, 0, 0, 0, time.Local)
+
+			// 检查日期有效性
+			lastDayOfMonth := time.Date(nextResetDate.Year(), nextResetDate.Month()+1, 0, 0, 0, 0, 0, time.Local).Day()
+			if expiryDay > lastDayOfMonth {
+				nextResetDate = time.Date(nextResetDate.Year(), nextResetDate.Month(), lastDayOfMonth, 0, 0, 0, 0, time.Local)
+			}
+		}
+
+		daysDiff := calculateDaysDifference(now, lastResetDate)
+		duration = formatDuration(time.Duration(daysDiff*24) * time.Hour)
+		resetDateStr = fmt.Sprintf("%d-%02d-%02d", nextResetDate.Year(), nextResetDate.Month(), nextResetDate.Day())
+	}
 
 	// 获取重置日流量
 	transmitBytes, receiveBytes, err := c.queryTrafficForDuration(labels, duration, now)
@@ -86,7 +217,7 @@ func (c *Client) GetInstanceInfo(labels model.Metric) (string, error) {
 	info += fmt.Sprintf("<b>续费日期:</b> %s\n", expiryStr)
 	info += fmt.Sprintf("<b>续费价格:</b> %s(%s)\n", priceStr, cycleStr)
 	info += fmt.Sprintf("<b>剩余时间:</b> %d 年 %d 月 %d 天\n", yearsLeft, monthsLeft, daysLeft)
-	info += fmt.Sprintf("<b>重置日期:</b> %s\n", lastMonthExpiryStr)
+	info += fmt.Sprintf("<b>重置日期:</b> %s\n", resetDateStr)
 
 	info += fmt.Sprintf("\n<b>重置日流量:</b>\n")
 	info += fmt.Sprintf("  上传: %s\n", FormatBytes(transmitBytes))
@@ -296,7 +427,7 @@ func (c *Client) FetchResourceMetrics(labels model.Metric, duration string, now 
 		memTotalQuery = fmt.Sprintf(`node_memory_MemTotal_bytes{%s}`, labelMatchers)
 		memAvailebleQuery = fmt.Sprintf(`node_memory_MemAvailable_bytes{%s}`, labelMatchers)
 	}
-	
+
 	cpuResult, err := c.QueryPrometheus(cpuQuery, now)
 	if err != nil {
 		return 0, 0, 0, 0, 0, 0, 0, fmt.Errorf("Failed to query CPU usage: %v", err)
@@ -364,40 +495,481 @@ func (c *Client) QueryNetworkRate(labels model.Metric, now time.Time) (uploadRat
 	return uploadRate, downloadRate, nil
 }
 
-func calculateLastMonthExpiry(expiryTime time.Time, now time.Time) time.Time {
-	dayOfMonth := expiryTime.Day()
-	year, month, _ := expiryTime.Date()
-	_, nowMonth, _ := now.Date()
-	for {
-		// 推到上一个月
-		if month == 1 {
-			year--
-			month = 12
-		} else {
-			month--
-		}
+// GetHighestCpuUsageInstance 返回CPU使用率最高的实例名称和使用率值
+func (c *Client) GetHighestCpuUsageInstance(now time.Time) (string, float64, error) {
+	query := `topk(1, (1 - avg by (instance) (rate(node_cpu_seconds_total{mode="idle"}[5m]))) * 100)`
+	
+	result, err := c.QueryPrometheus(query, now)
+	if err != nil {
+		return "", 0, fmt.Errorf("Failed to query highest CPU usage instance: %v", err)
+	}
 
-		if month == nowMonth {
-			if nowMonth == 1 {
-				year--
-				month = 12
-			} else {
-				month--
-			}
-		}
-		// 获取上一个月的最后一天
-		lastDayOfPrevMonth := time.Date(year, month+1, 0, 0, 0, 0, 0, time.Local).Day()
-		// 计算上一个月的到期时间
-		monthExpiry := time.Date(year, month, dayOfMonth, 0, 0, 0, 0, time.Local)
-		// 如果上一个月的到期时间的日子大于上一个月的最后一天，使用上一个月的最后一天
-		if dayOfMonth > lastDayOfPrevMonth {
-			monthExpiry = time.Date(year, month, lastDayOfPrevMonth, 0, 0, 0, 0, time.Local)
-		}
-		// 如果上一个月的到期时间不在 now 后，返回
-		if !monthExpiry.After(now) {
-			return monthExpiry
+	if result.Type() == model.ValVector {
+		vector := result.(model.Vector)
+		if vector.Len() > 0 {
+			// 获取CPU使用率最高的实例
+			point := vector[0]
+			instance := string(point.Metric["instance"])
+			value := float64(point.Value)
+			return instance, value, nil
 		}
 	}
+
+	return "", 0, nil
+}
+
+// GetHighestMemoryUsageInstance 返回内存使用率最高的实例名称和使用率值
+func (c *Client) GetHighestMemoryUsageInstance(now time.Time) (string, float64, error) {
+	query := `topk(1, (1 - (node_memory_MemAvailable_bytes / node_memory_MemTotal_bytes)) * 100)`
+
+	result, err := c.QueryPrometheus(query, now)
+	if err != nil {
+		return "", 0, fmt.Errorf("Failed to query highest memory usage instance: %v", err)
+	}
+
+	if result.Type() == model.ValVector {
+		vector := result.(model.Vector)
+		if vector.Len() > 0 {
+			// 获取内存使用率最高的实例
+			point := vector[0]
+			instance := string(point.Metric["instance"])
+			value := float64(point.Value)
+			return instance, value, nil
+		}
+	}
+
+	return "", 0, nil
+}
+
+// GetHighestDiskUsageInstance 返回磁盘使用率最高的实例名称和使用率值
+func (c *Client) GetHighestDiskUsageInstance(now time.Time) (string, float64, error) {
+	query := `topk(1, (1 - (node_filesystem_avail_bytes / node_filesystem_size_bytes)) * 100)`
+
+	result, err := c.QueryPrometheus(query, now)
+	if err != nil {
+		return "", 0, fmt.Errorf("Failed to query highest disk usage instance: %v", err)
+	}
+
+	if result.Type() == model.ValVector {
+		vector := result.(model.Vector)
+		if vector.Len() > 0 {
+			// 获取磁盘使用率最高的实例
+			point := vector[0]
+			instance := string(point.Metric["instance"])
+			value := float64(point.Value)
+			return instance, value, nil
+		}
+	}
+
+	return "", 0, nil
+}
+
+// GetHighestUploadRateInstance 返回上传速率最高的实例名称和速率值
+func (c *Client) GetHighestUploadRateInstance(now time.Time) (string, float64, error) {
+	query := `topk(1, sum by (instance) (rate(node_network_transmit_bytes_total{device=~"eth.*|ens.*|eno.*|enp.*|enx.*|enX.*|wlan.*|venet.*"}[1m])))`
+
+	result, err := c.QueryPrometheus(query, now)
+	if err != nil {
+		return "", 0, fmt.Errorf("Failed to query highest upload rate instance: %v", err)
+	}
+
+	if result.Type() == model.ValVector {
+		vector := result.(model.Vector)
+		if vector.Len() > 0 {
+			// 获取上传速率最高的实例
+			point := vector[0]
+			instance := string(point.Metric["instance"])
+			value := float64(point.Value)
+			return instance, value, nil
+		}
+	}
+
+	return "", 0, nil
+}
+
+// GetHighestDownloadRateInstance 返回下载速率最高的实例名称和速率值
+func (c *Client) GetHighestDownloadRateInstance(now time.Time) (string, float64, error) {
+	query := `topk(1, sum by (instance) (rate(node_network_receive_bytes_total{device=~"eth.*|ens.*|eno.*|enp.*|enx.*|enX.*|wlan.*|venet.*"}[1m])))`
+
+	result, err := c.QueryPrometheus(query, now)
+	if err != nil {
+		return "", 0, fmt.Errorf("Failed to query highest download rate instance: %v", err)
+	}
+
+	if result.Type() == model.ValVector {
+		vector := result.(model.Vector)
+		if vector.Len() > 0 {
+			// 获取下载速率最高的实例
+			point := vector[0]
+			instance := string(point.Metric["instance"])
+			value := float64(point.Value)
+			return instance, value, nil
+		}
+	}
+
+	return "", 0, nil
+}
+
+// GetHighestUploadTrafficInstance returns the instance with the highest upload traffic in the last 24 hours
+func (c *Client) GetHighestUploadTrafficInstance(now time.Time) (string, float64, error) {
+	query := `topk(1, sum by (instance) (increase(node_network_transmit_bytes_total{device=~"eth.*|ens.*|eno.*|enp.*|enx.*|enX.*|wlan.*|venet.*"}[1d])))`
+
+	result, err := c.QueryPrometheus(query, now)
+	if err != nil {
+		return "", 0, fmt.Errorf("Failed to query highest upload traffic instance: %v", err)
+	}
+
+	if result.Type() == model.ValVector {
+		vector := result.(model.Vector)
+		if vector.Len() > 0 {
+			// 获取上传流量最高的实例
+			point := vector[0]
+			instance := string(point.Metric["instance"])
+			value := float64(point.Value)
+			return instance, value, nil
+		}
+	}
+
+	return "", 0, nil
+}
+
+// GetHighestDownloadTrafficInstance returns the instance with the highest download traffic in the last 24 hours
+func (c *Client) GetHighestDownloadTrafficInstance(now time.Time) (string, float64, error) {
+	query := `topk(1, sum by (instance) (increase(node_network_receive_bytes_total{device=~"eth.*|ens.*|eno.*|enp.*|enx.*|enX.*|wlan.*|venet.*"}[1d])))`
+
+	result, err := c.QueryPrometheus(query, now)
+	if err != nil {
+		return "", 0, fmt.Errorf("Failed to query highest download traffic instance: %v", err)
+	}
+
+	if result.Type() == model.ValVector {
+		vector := result.(model.Vector)
+		if vector.Len() > 0 {
+			// 获取下载流量最高的实例
+			point := vector[0]
+			instance := string(point.Metric["instance"])
+			value := float64(point.Value)
+			return instance, value, nil
+		}
+	}
+
+	return "", 0, nil
+}
+
+// GetHighestTotalTrafficInstance returns the instance with the highest total traffic in the last 24 hours
+func (c *Client) GetHighestTotalTrafficInstance(now time.Time) (string, float64, error) {
+	// 先查询上传流量
+	queryUpload := `sum by (instance) (increase(node_network_transmit_bytes_total{device=~"eth.*|ens.*|eno.*|enp.*|enx.*|enX.*|wlan.*|venet.*"}[1d]))`
+	resultUpload, err := c.QueryPrometheus(queryUpload, now)
+	if err != nil {
+		return "", 0, fmt.Errorf("Failed to query upload traffic for total calculation: %v", err)
+	}
+
+	// 先查询下载流量
+	queryDownload := `sum by (instance) (increase(node_network_receive_bytes_total{device=~"eth.*|ens.*|eno.*|enp.*|enx.*|enX.*|wlan.*|venet.*"}[1d]))`
+	resultDownload, err := c.QueryPrometheus(queryDownload, now)
+	if err != nil {
+		return "", 0, fmt.Errorf("Failed to query download traffic for total calculation: %v", err)
+	}
+
+	// 将两个结果相加，找出总流量最高的实例
+	trafficMap := make(map[string]float64)
+
+	if resultUpload.Type() == model.ValVector {
+		vector := resultUpload.(model.Vector)
+		for _, point := range vector {
+			instance := string(point.Metric["instance"])
+			value := float64(point.Value)
+			trafficMap[instance] += value
+		}
+	}
+
+	if resultDownload.Type() == model.ValVector {
+		vector := resultDownload.(model.Vector)
+		for _, point := range vector {
+			instance := string(point.Metric["instance"])
+			value := float64(point.Value)
+			trafficMap[instance] += value
+		}
+	}
+
+	// 找出总流量最高的实例
+	var highestInstance string
+	var highestValue float64
+	for instance, totalValue := range trafficMap {
+		if totalValue > highestValue {
+			highestValue = totalValue
+			highestInstance = instance
+		}
+	}
+
+	return highestInstance, highestValue, nil
+}
+
+// GetHighestDailyUploadTrafficInstance returns the instance with the highest upload traffic in the current day
+func (c *Client) GetHighestDailyUploadTrafficInstance(now time.Time) (string, float64, error) {
+	startOfDay := time.Date(now.Year(), now.Month(), now.Day(), 0, 0, 0, 0, now.Location())
+	durationCurrentDay := fmt.Sprintf("%.0fh", now.Sub(startOfDay).Hours())
+	
+	query := fmt.Sprintf(`topk(1, sum by (instance) (increase(node_network_transmit_bytes_total{device=~"eth.*|ens.*|eno.*|enp.*|enx.*|enX.*|wlan.*|venet.*"}[%s])))`, durationCurrentDay)
+
+	result, err := c.QueryPrometheus(query, now)
+	if err != nil {
+		return "", 0, fmt.Errorf("Failed to query highest daily upload traffic instance: %v", err)
+	}
+
+	if result.Type() == model.ValVector {
+		vector := result.(model.Vector)
+		if vector.Len() > 0 {
+			// 获取上传流量最高的实例
+			point := vector[0]
+			instance := string(point.Metric["instance"])
+			value := float64(point.Value)
+			return instance, value, nil
+		}
+	}
+
+	return "", 0, nil
+}
+
+// GetHighestDailyDownloadTrafficInstance returns the instance with the highest download traffic in the current day
+func (c *Client) GetHighestDailyDownloadTrafficInstance(now time.Time) (string, float64, error) {
+	startOfDay := time.Date(now.Year(), now.Month(), now.Day(), 0, 0, 0, 0, now.Location())
+	durationCurrentDay := fmt.Sprintf("%.0fh", now.Sub(startOfDay).Hours())
+	
+	query := fmt.Sprintf(`topk(1, sum by (instance) (increase(node_network_receive_bytes_total{device=~"eth.*|ens.*|eno.*|enp.*|enx.*|enX.*|wlan.*|venet.*"}[%s])))`, durationCurrentDay)
+
+	result, err := c.QueryPrometheus(query, now)
+	if err != nil {
+		return "", 0, fmt.Errorf("Failed to query highest daily download traffic instance: %v", err)
+	}
+
+	if result.Type() == model.ValVector {
+		vector := result.(model.Vector)
+		if vector.Len() > 0 {
+			// 获取下载流量最高的实例
+			point := vector[0]
+			instance := string(point.Metric["instance"])
+			value := float64(point.Value)
+			return instance, value, nil
+		}
+	}
+
+	return "", 0, nil
+}
+
+// GetHighestDailyTotalTrafficInstance returns the instance with the highest total traffic in the current day
+func (c *Client) GetHighestDailyTotalTrafficInstance(now time.Time) (string, float64, error) {
+	startOfDay := time.Date(now.Year(), now.Month(), now.Day(), 0, 0, 0, 0, now.Location())
+	durationCurrentDay := fmt.Sprintf("%.0fh", now.Sub(startOfDay).Hours())
+
+	// 先查询上传流量
+	queryUpload := fmt.Sprintf(`sum by (instance) (increase(node_network_transmit_bytes_total{device=~"eth.*|ens.*|eno.*|enp.*|enx.*|enX.*|wlan.*|venet.*"}[%s]))`, durationCurrentDay)
+	resultUpload, err := c.QueryPrometheus(queryUpload, now)
+	if err != nil {
+		return "", 0, fmt.Errorf("Failed to query upload traffic for daily total calculation: %v", err)
+	}
+
+	// 再查询下载流量
+	queryDownload := fmt.Sprintf(`sum by (instance) (increase(node_network_receive_bytes_total{device=~"eth.*|ens.*|eno.*|enp.*|enx.*|enX.*|wlan.*|venet.*"}[%s]))`, durationCurrentDay)
+	resultDownload, err := c.QueryPrometheus(queryDownload, now)
+	if err != nil {
+		return "", 0, fmt.Errorf("Failed to query download traffic for daily total calculation: %v", err)
+	}
+
+	// 将两个结果相加，找出当日总流量最高的实例
+	trafficMap := make(map[string]float64)
+
+	if resultUpload.Type() == model.ValVector {
+		vector := resultUpload.(model.Vector)
+		for _, point := range vector {
+			instance := string(point.Metric["instance"])
+			value := float64(point.Value)
+			trafficMap[instance] += value
+		}
+	}
+
+	if resultDownload.Type() == model.ValVector {
+		vector := resultDownload.(model.Vector)
+		for _, point := range vector {
+			instance := string(point.Metric["instance"])
+			value := float64(point.Value)
+			trafficMap[instance] += value
+		}
+	}
+
+	// 找出当日总流量最高的实例
+	var highestInstance string
+	var highestValue float64
+	for instance, totalValue := range trafficMap {
+		if totalValue > highestValue {
+			highestValue = totalValue
+			highestInstance = instance
+		}
+	}
+
+	return highestInstance, highestValue, nil
+}
+
+// GetHighestMonthlyUploadTrafficInstance returns the instance with the highest upload traffic in the current month
+func (c *Client) GetHighestMonthlyUploadTrafficInstance(now time.Time) (string, float64, error) {
+	startOfMonth := time.Date(now.Year(), now.Month(), 1, 0, 0, 0, 0, now.Location())
+	durationCurrentMonth := fmt.Sprintf("%.0fh", now.Sub(startOfMonth).Hours())
+	
+	query := fmt.Sprintf(`topk(1, sum by (instance) (increase(node_network_transmit_bytes_total{device=~"eth.*|ens.*|eno.*|enp.*|enx.*|enX.*|wlan.*|venet.*"}[%s])))`, durationCurrentMonth)
+
+	result, err := c.QueryPrometheus(query, now)
+	if err != nil {
+		return "", 0, fmt.Errorf("Failed to query highest monthly upload traffic instance: %v", err)
+	}
+
+	if result.Type() == model.ValVector {
+		vector := result.(model.Vector)
+		if vector.Len() > 0 {
+			// 获取上传流量最高的实例
+			point := vector[0]
+			instance := string(point.Metric["instance"])
+			value := float64(point.Value)
+			return instance, value, nil
+		}
+	}
+
+	return "", 0, nil
+}
+
+// GetHighestMonthlyDownloadTrafficInstance returns the instance with the highest download traffic in the current month
+func (c *Client) GetHighestMonthlyDownloadTrafficInstance(now time.Time) (string, float64, error) {
+	startOfMonth := time.Date(now.Year(), now.Month(), 1, 0, 0, 0, 0, now.Location())
+	durationCurrentMonth := fmt.Sprintf("%.0fh", now.Sub(startOfMonth).Hours())
+	
+	query := fmt.Sprintf(`topk(1, sum by (instance) (increase(node_network_receive_bytes_total{device=~"eth.*|ens.*|eno.*|enp.*|enx.*|enX.*|wlan.*|venet.*"}[%s])))`, durationCurrentMonth)
+
+	result, err := c.QueryPrometheus(query, now)
+	if err != nil {
+		return "", 0, fmt.Errorf("Failed to query highest monthly download traffic instance: %v", err)
+	}
+
+	if result.Type() == model.ValVector {
+		vector := result.(model.Vector)
+		if vector.Len() > 0 {
+			// 获取下载流量最高的实例
+			point := vector[0]
+			instance := string(point.Metric["instance"])
+			value := float64(point.Value)
+			return instance, value, nil
+		}
+	}
+
+	return "", 0, nil
+}
+
+// GetHighestMonthlyTotalTrafficInstance returns the instance with the highest total traffic in the current month
+func (c *Client) GetHighestMonthlyTotalTrafficInstance(now time.Time) (string, float64, error) {
+	startOfMonth := time.Date(now.Year(), now.Month(), 1, 0, 0, 0, 0, now.Location())
+	durationCurrentMonth := fmt.Sprintf("%.0fh", now.Sub(startOfMonth).Hours())
+
+	// 先查询上传流量
+	queryUpload := fmt.Sprintf(`sum by (instance) (increase(node_network_transmit_bytes_total{device=~"eth.*|ens.*|eno.*|enp.*|enx.*|enX.*|wlan.*|venet.*"}[%s]))`, durationCurrentMonth)
+	resultUpload, err := c.QueryPrometheus(queryUpload, now)
+	if err != nil {
+		return "", 0, fmt.Errorf("Failed to query upload traffic for monthly total calculation: %v", err)
+	}
+
+	// 再查询下载流量
+	queryDownload := fmt.Sprintf(`sum by (instance) (increase(node_network_receive_bytes_total{device=~"eth.*|ens.*|eno.*|enp.*|enx.*|enX.*|wlan.*|venet.*"}[%s]))`, durationCurrentMonth)
+	resultDownload, err := c.QueryPrometheus(queryDownload, now)
+	if err != nil {
+		return "", 0, fmt.Errorf("Failed to query download traffic for monthly total calculation: %v", err)
+	}
+
+	// 将两个结果相加，找出当月总流量最高的实例
+	trafficMap := make(map[string]float64)
+
+	if resultUpload.Type() == model.ValVector {
+		vector := resultUpload.(model.Vector)
+		for _, point := range vector {
+			instance := string(point.Metric["instance"])
+			value := float64(point.Value)
+			trafficMap[instance] += value
+		}
+	}
+
+	if resultDownload.Type() == model.ValVector {
+		vector := resultDownload.(model.Vector)
+		for _, point := range vector {
+			instance := string(point.Metric["instance"])
+			value := float64(point.Value)
+			trafficMap[instance] += value
+		}
+	}
+
+	// 找出当月总流量最高的实例
+	var highestInstance string
+	var highestValue float64
+	for instance, totalValue := range trafficMap {
+		if totalValue > highestValue {
+			highestValue = totalValue
+			highestInstance = instance
+		}
+	}
+
+	return highestInstance, highestValue, nil
+}
+
+func calculateLastMonthExpiry(expiryTime time.Time, now time.Time) time.Time {
+	expiryDay := expiryTime.Day()
+	currentYear := now.Year()
+	currentMonth := now.Month()
+	currentDay := now.Day()
+
+	// 首先尝试在当前月份查找到期日
+	var lastMonthExpiry time.Time
+
+	// 获取当前月有多少天，以防止到期日在当前月中不存在（例如2月30日）
+	daysInCurrentMonth := time.Date(currentYear, currentMonth+1, 0, 0, 0, 0, 0, time.Local).Day()
+
+	if currentDay >= expiryDay {
+		// 如果当前日期已经过了或等于到期日，那么本次周期的到期日就是本月的到期日
+		// 上一个周期的到期日就是本月的到期日
+		if expiryDay <= daysInCurrentMonth {
+			lastMonthExpiry = time.Date(currentYear, currentMonth, expiryDay, 0, 0, 0, 0, time.Local)
+		} else {
+			// 如果到期日大于当前月的天数，使用当月最后一天
+			lastMonthExpiry = time.Date(currentYear, currentMonth, daysInCurrentMonth, 0, 0, 0, 0, time.Local)
+		}
+
+		// 如果这个日期是今天或未来，我们需要找上一个周期的日期
+		if lastMonthExpiry.After(now) {
+			// 移动到上一个月
+			lastMonthExpiry = shiftToPreviousMonth(currentYear, currentMonth, expiryDay)
+		}
+	} else {
+		// 如果当前日期还没到期，那么上一个周期的到期日是在上个月
+		lastMonthExpiry = shiftToPreviousMonth(currentYear, currentMonth, expiryDay)
+	}
+
+	return lastMonthExpiry
+}
+
+// 辅助函数：获取上一个月的对应到期日
+func shiftToPreviousMonth(year int, month time.Month, day int) time.Time {
+	// 将日期设置为上个月
+	prevMonth := month - 1
+	prevYear := year
+	if prevMonth < 1 {
+		prevYear = year - 1
+		prevMonth = 12
+	}
+
+	// 获取上个月的最大天数
+	daysInPrevMonth := time.Date(prevYear, prevMonth+1, 0, 0, 0, 0, 0, time.Local).Day()
+
+	// 如果原日期在上个月不存在（如1月31日），则使用上个月的最后一天
+	if day > daysInPrevMonth {
+		return time.Date(prevYear, prevMonth, daysInPrevMonth, 0, 0, 0, 0, time.Local)
+	}
+
+	return time.Date(prevYear, prevMonth, day, 0, 0, 0, 0, time.Local)
 }
 
 func calculateDaysDifference(now, lastMonthExpiry time.Time) int {
