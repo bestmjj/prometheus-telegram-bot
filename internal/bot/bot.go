@@ -21,13 +21,14 @@ type BotInstance struct {
 }
 
 const (
-	mainMenuID             = "main"
-	instanceMenuID         = "instance"
-	instanceOverviewMenuID = "instance_overview"
-	otherMenuID            = "other"
-	allInstancesMenuID     = "all_instances"
-	onlineInstancesMenuID  = "online_instances"
-	offlineInstancesMenuID = "offline_instances"
+	mainMenuID                = "main"
+	instanceMenuID            = "instance"
+	instanceOverviewMenuID    = "instance_overview"
+	otherMenuID               = "other"
+	allInstancesMenuID        = "all_instances"
+	onlineInstancesMenuID     = "online_instances"
+	offlineInstancesMenuID    = "offline_instances"
+	instanceDetailTableMenuID = "instance_detail_table" // 新增：实例详情表菜单ID
 )
 
 type MenuItem struct {
@@ -115,7 +116,13 @@ func (b *BotInstance) editMenuPage(chatID int64, messageID int, menuID string, p
 		return b.offlineInstancesMenuPage(chatID, messageID, page)
 	case otherMenuID:
 		return b.otherMenuPage(chatID, messageID)
+	case instanceDetailTableMenuID: // 新增：处理实例详情表菜单
+		return b.instanceDetailTableMenuPage(chatID, messageID, page)
 	default:
+		if strings.HasPrefix(menuID, "instance_info:") {
+			instanceName := strings.TrimPrefix(menuID, "instance_info:")
+			return b.instanceInfoPage(chatID, messageID, instanceName)
+		}
 		return tgbotapi.NewMessage(chatID, "未知菜单")
 	}
 }
@@ -147,7 +154,7 @@ func (b *BotInstance) handleCallback(callback *tgbotapi.CallbackQuery) {
 	// 检查是否是实例详情的回调数据
 	if strings.HasPrefix(data, "instance_detail:") {
 		instanceName := strings.TrimPrefix(data, "instance_detail:")
-		
+
 		// 查找实例
 		var selectedInstance model.Metric
 		allInstances := b.fetchInstancesForMenu(allInstancesMenuID)
@@ -157,7 +164,7 @@ func (b *BotInstance) handleCallback(callback *tgbotapi.CallbackQuery) {
 				break
 			}
 		}
-		
+
 		if len(selectedInstance) == 0 {
 			b.editMessage(chatID, messageID, "找不到指定的实例，请重试。")
 			return
@@ -177,10 +184,23 @@ func (b *BotInstance) handleCallback(callback *tgbotapi.CallbackQuery) {
 	}
 
 	switch data {
-	case mainMenuID, instanceMenuID, otherMenuID, instanceOverviewMenuID:
-		b.pushMenu(data)
+	case mainMenuID, instanceMenuID, otherMenuID, instanceOverviewMenuID, instanceDetailTableMenuID: // 添加新菜单ID到主菜单切换处理
+		// 简单的导航逻辑优化
+		if data == mainMenuID {
+			// 如果是返回主菜单，重置栈
+			b.menuStack = []string{mainMenuID}
+		} else if len(b.menuStack) > 1 && b.menuStack[len(b.menuStack)-2] == data {
+			// 如果是返回上一级（目标ID等于栈中倒数第二个ID），则出栈
+			b.popMenu()
+		} else if data != b.currentMenu() {
+			// 如果不是刷新当前页，则入栈
+			b.pushMenu(data)
+		}
+
 		editMsg := b.editMenuPage(chatID, messageID, data, 1)
-		b.BotAPI.Request(editMsg)
+		if _, err := b.BotAPI.Request(editMsg); err != nil {
+			log.Printf("Failed to edit menu page: %v", err)
+		}
 		b.BotAPI.Request(tgbotapi.NewCallback(callback.ID, ""))
 	case allInstancesMenuID, onlineInstancesMenuID, offlineInstancesMenuID:
 		b.pushMenu(data)
@@ -188,31 +208,18 @@ func (b *BotInstance) handleCallback(callback *tgbotapi.CallbackQuery) {
 		b.BotAPI.Request(editMsg)
 		b.BotAPI.Request(tgbotapi.NewCallback(callback.ID, ""))
 	default:
-		var selectedInstance model.Metric
+		// 当点击具体实例时，不再发送新消息，而是进入实例详情菜单
+		// 构造一个特殊的菜单ID来表示实例详情
+		instanceInfoMenuID := "instance_info:" + data
 
-		for _, instance := range b.fetchInstancesForMenu(b.currentMenu()) {
-			if string(instance["instance"]) == data {
-				selectedInstance = instance
-				break
-			}
-		}
-		if len(selectedInstance) == 0 {
-			b.editMessage(chatID, messageID, "无效的选择，请重试。")
+		// 检查是否已经在详情页（避免重复点击）
+		if b.currentMenu() == instanceInfoMenuID {
+			b.BotAPI.Request(tgbotapi.NewCallback(callback.ID, ""))
 			return
 		}
 
-		info, err := b.PrometheusClient.GetInstanceInfo(selectedInstance)
-		if err != nil {
-			b.editMessage(chatID, messageID, fmt.Sprintf("获取实例信息失败: %v", err))
-			return
-		}
-
-		msg := tgbotapi.NewMessage(chatID, info)
-		msg.ParseMode = "HTML"
-		b.BotAPI.Send(msg)
-		b.popMenu()
-		// send the menu again
-		editMsg := b.editMenuPage(chatID, 0, b.currentMenu(), 1)
+		b.pushMenu(instanceInfoMenuID)
+		editMsg := b.editMenuPage(chatID, messageID, instanceInfoMenuID, 1)
 		b.BotAPI.Request(editMsg)
 		b.BotAPI.Request(tgbotapi.NewCallback(callback.ID, ""))
 	}
@@ -279,4 +286,3 @@ func (b *BotInstance) generateCallbackURL(callbackData string) string {
 	encodedData := url.QueryEscape(callbackData)
 	return fmt.Sprintf("tg://bot?start=%s", encodedData)
 }
-

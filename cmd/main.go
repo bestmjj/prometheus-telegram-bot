@@ -43,9 +43,9 @@ func main() {
 	}
 
 	botInstance, err := bot.NewBot(botToken, prometheusClient, pageSize)
-    if err != nil {
-        log.Fatalf("创建 Telegram Bot 失败: %v", err)
-    }
+	if err != nil {
+		log.Fatalf("创建 Telegram Bot 失败: %v", err)
+	}
 
 	botInstance.Start()
 }

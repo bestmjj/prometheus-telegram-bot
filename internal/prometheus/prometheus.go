@@ -60,6 +60,10 @@ func (c *Client) GetInstanceInfo(labels model.Metric) (string, error) {
 		return "", fmt.Errorf("Failed to parse expiry date: %v", err)
 	}
 
+	// Calculate actual expiry date based on cycle
+	actualExpiryTime := calculateActualExpiryDate(expiryTime, cycleStr, now)
+	actualExpiryStr := actualExpiryTime.Format("2006-01-02")
+
 	var lastResetDate time.Time
 	var nextResetDate time.Time
 	var resetDateStr string
@@ -96,13 +100,14 @@ func (c *Client) GetInstanceInfo(labels model.Metric) (string, error) {
 				lastMonthYear = year
 				lastMonthMonth = month - 1
 			}
-			lastResetDate = time.Date(lastMonthYear, lastMonthMonth, resetDayOfMonth, 0, 0, 0, 0, time.Local)
 
-			// 检查日期有效性
-			lastDayOfMonth := time.Date(lastResetDate.Year(), lastResetDate.Month()+1, 0, 0, 0, 0, 0, time.Local).Day()
-			if resetDayOfMonth > lastDayOfMonth {
-				lastResetDate = time.Date(lastResetDate.Year(), lastResetDate.Month(), lastDayOfMonth, 0, 0, 0, 0, time.Local)
+			// 获取上个月的总天数
+			daysInLastMonth := time.Date(lastMonthYear, lastMonthMonth+1, 0, 0, 0, 0, 0, time.Local).Day()
+			dayToUse := resetDayOfMonth
+			if dayToUse > daysInLastMonth {
+				dayToUse = daysInLastMonth
 			}
+			lastResetDate = time.Date(lastMonthYear, lastMonthMonth, dayToUse, 0, 0, 0, 0, time.Local)
 		}
 
 		// 计算下一个重置日
@@ -120,22 +125,25 @@ func (c *Client) GetInstanceInfo(labels model.Metric) (string, error) {
 				nextMonthYear = year
 				nextMonthMonth = month + 1
 			}
-			nextResetDate = time.Date(nextMonthYear, nextMonthMonth, resetDayOfMonth, 0, 0, 0, 0, time.Local)
 
-			// 检查日期有效性
-			lastDayOfMonth := time.Date(nextResetDate.Year(), nextResetDate.Month()+1, 0, 0, 0, 0, 0, time.Local).Day()
-			if resetDayOfMonth > lastDayOfMonth {
-				nextResetDate = time.Date(nextResetDate.Year(), nextResetDate.Month(), lastDayOfMonth, 0, 0, 0, 0, time.Local)
+			// 获取下个月的总天数
+			daysInNextMonth := time.Date(nextMonthYear, nextMonthMonth+1, 0, 0, 0, 0, 0, time.Local).Day()
+			dayToUse := resetDayOfMonth
+			if dayToUse > daysInNextMonth {
+				dayToUse = daysInNextMonth
 			}
+			nextResetDate = time.Date(nextMonthYear, nextMonthMonth, dayToUse, 0, 0, 0, 0, time.Local)
 		}
 
 		// 计算从上一个重置日到现在的时间差
-		daysDiff := calculateDaysDifference(now, lastResetDate)
-		duration = formatDuration(time.Duration(daysDiff*24) * time.Hour)
+		duration = getDurationString(now, lastResetDate)
+		if duration == "" {
+			duration = "1s"
+		}
 		resetDateStr = fmt.Sprintf("%d-%02d-%02d", nextResetDate.Year(), nextResetDate.Month(), nextResetDate.Day())
 	} else {
 		// 如果没有固定的重置日，使用到期日作为参考
-		expiryDay := expiryTime.Day()
+		expiryDay := actualExpiryTime.Day()
 		year := now.Year()
 		month := now.Month()
 
@@ -156,13 +164,14 @@ func (c *Client) GetInstanceInfo(labels model.Metric) (string, error) {
 				lastMonthYear = year
 				lastMonthMonth = month - 1
 			}
-			lastResetDate = time.Date(lastMonthYear, lastMonthMonth, expiryDay, 0, 0, 0, 0, time.Local)
 
-			// 检查日期有效性
-			lastDayOfMonth := time.Date(lastResetDate.Year(), lastResetDate.Month()+1, 0, 0, 0, 0, 0, time.Local).Day()
-			if expiryDay > lastDayOfMonth {
-				lastResetDate = time.Date(lastResetDate.Year(), lastResetDate.Month(), lastDayOfMonth, 0, 0, 0, 0, time.Local)
+			// 获取上个月的总天数
+			daysInLastMonth := time.Date(lastMonthYear, lastMonthMonth+1, 0, 0, 0, 0, 0, time.Local).Day()
+			dayToUse := expiryDay
+			if dayToUse > daysInLastMonth {
+				dayToUse = daysInLastMonth
 			}
+			lastResetDate = time.Date(lastMonthYear, lastMonthMonth, dayToUse, 0, 0, 0, 0, time.Local)
 		}
 
 		// 计算下一个重置日
@@ -180,17 +189,20 @@ func (c *Client) GetInstanceInfo(labels model.Metric) (string, error) {
 				nextMonthYear = year
 				nextMonthMonth = month + 1
 			}
-			nextResetDate = time.Date(nextMonthYear, nextMonthMonth, expiryDay, 0, 0, 0, 0, time.Local)
 
-			// 检查日期有效性
-			lastDayOfMonth := time.Date(nextResetDate.Year(), nextResetDate.Month()+1, 0, 0, 0, 0, 0, time.Local).Day()
-			if expiryDay > lastDayOfMonth {
-				nextResetDate = time.Date(nextResetDate.Year(), nextResetDate.Month(), lastDayOfMonth, 0, 0, 0, 0, time.Local)
+			// 获取下个月的总天数
+			daysInNextMonth := time.Date(nextMonthYear, nextMonthMonth+1, 0, 0, 0, 0, 0, time.Local).Day()
+			dayToUse := expiryDay
+			if dayToUse > daysInNextMonth {
+				dayToUse = daysInNextMonth
 			}
+			nextResetDate = time.Date(nextMonthYear, nextMonthMonth, dayToUse, 0, 0, 0, 0, time.Local)
 		}
 
-		daysDiff := calculateDaysDifference(now, lastResetDate)
-		duration = formatDuration(time.Duration(daysDiff*24) * time.Hour)
+		duration = getDurationString(now, lastResetDate)
+		if duration == "" {
+			duration = "1s"
+		}
 		resetDateStr = fmt.Sprintf("%d-%02d-%02d", nextResetDate.Year(), nextResetDate.Month(), nextResetDate.Day())
 	}
 
@@ -200,8 +212,13 @@ func (c *Client) GetInstanceInfo(labels model.Metric) (string, error) {
 		return "", fmt.Errorf("Failed to query reset day traffic: %v", err)
 	}
 
-	timeLeft := expiryTime.Sub(now)
-	yearsLeft, monthsLeft, daysLeft := calculateTimeLeft(timeLeft)
+	timeLeft := actualExpiryTime.Sub(now)
+	yearsLeft, monthsLeft, daysLeft := calculateTimeDifference(now, actualExpiryTime)
+
+	// If the time difference is negative, set all values to 0
+	if timeLeft < 0 {
+		yearsLeft, monthsLeft, daysLeft = 0, 0, 0
+	}
 
 	// 获取启动时长
 	bootTime, err := c.queryNodeBootTime(labels, now)
@@ -214,9 +231,13 @@ func (c *Client) GetInstanceInfo(labels model.Metric) (string, error) {
 		info += fmt.Sprintf("<b>在线时长:</b> %s\n", bootTime)
 	}
 
-	info += fmt.Sprintf("<b>续费日期:</b> %s\n", expiryStr)
-	info += fmt.Sprintf("<b>续费价格:</b> %s(%s)\n", priceStr, cycleStr)
-	info += fmt.Sprintf("<b>剩余时间:</b> %d 年 %d 月 %d 天\n", yearsLeft, monthsLeft, daysLeft)
+	info += fmt.Sprintf("<b>续费日期:</b> %s\n", actualExpiryStr)
+	info += fmt.Sprintf("<b>续费价格:</b> %s(%s)\n", priceStr, convertCycleToFriendlyText(cycleStr))
+	if timeLeft >= 0 {
+		info += fmt.Sprintf("<b>剩余时间:</b> %d 年 %d 月 %d 天\n", yearsLeft, monthsLeft, daysLeft)
+	} else {
+		info += fmt.Sprintf("<b>剩余时间:</b> 已过期\n")
+	}
 	info += fmt.Sprintf("<b>重置日期:</b> %s\n", resetDateStr)
 
 	info += fmt.Sprintf("\n<b>重置日流量:</b>\n")
@@ -266,6 +287,17 @@ func (c *Client) GetInstanceInfo(labels model.Metric) (string, error) {
 	info += fmt.Sprintf("  上传: %s\n", FormatBytesPerSecond(uploadRate))
 	info += fmt.Sprintf("  下载: %s\n", FormatBytesPerSecond(downloadRate))
 
+	// 获取每日流量
+	naturalDailyTransmitBytes, naturalDailyReceiveBytes, err = c.GetDailyTraffic(labels, now)
+	if err != nil {
+		return "", fmt.Errorf("Failed to query natural daily traffic: %v", err)
+	}
+	naturalDailyTotalBytes = naturalDailyTransmitBytes + naturalDailyReceiveBytes
+	info += "\n<b>日流量:</b>\n"
+	info += fmt.Sprintf("  上传: %s\n", FormatBytes(naturalDailyTransmitBytes))
+	info += fmt.Sprintf("  下载: %s\n", FormatBytes(naturalDailyReceiveBytes))
+	info += fmt.Sprintf("  总共: %s\n", FormatBytes(naturalDailyTotalBytes))
+
 	cpuUsage, memoryUsage, diskUsage, diskTotal, diskAvaileble, memTotal, memAvaileble, err := c.FetchResourceMetrics(labels, duration, now)
 	if err != nil {
 		log.Printf("Failed to fetch resource metrics: %v", err)
@@ -309,10 +341,24 @@ func (c *Client) queryNodeBootTime(labels model.Metric, queryTime time.Time) (st
 	}
 
 	if bootTimeResult.Type() == model.ValVector && bootTimeResult.(model.Vector).Len() > 0 {
-		bootTime := time.Duration(int64(c.GetFloatFromPromResult(bootTimeResult)) * int64(time.Second))
-		return formatDuration(bootTime), nil
+		uptimeSeconds := c.GetFloatFromPromResult(bootTimeResult)
+
+		// Convert uptime to years, months, days format
+		now := queryTime
+		bootTime := now.Add(-time.Duration(uptimeSeconds) * time.Second)
+
+		// Calculate years, months, days from the boot time
+		years, months, days := calculateTimeDifference(bootTime, now)
+
+		if years > 0 {
+			return fmt.Sprintf("%d 年 %d 月 %d 天", years, months, days), nil
+		} else if months > 0 {
+			return fmt.Sprintf("%d 月 %d 天", months, days), nil
+		} else {
+			return fmt.Sprintf("%d 天", days), nil
+		}
 	}
-	return "", nil
+	return "N/A", nil
 }
 
 func (c *Client) queryTrafficForDuration(labels model.Metric, duration string, now time.Time) (transmitBytes float64, receiveBytes float64, err error) {
@@ -346,65 +392,24 @@ func (c *Client) queryTrafficForDuration(labels model.Metric, duration string, n
 
 func (c *Client) GetDailyTraffic(labels model.Metric, now time.Time) (transmitBytes float64, receiveBytes float64, err error) {
 	startOfDay := time.Date(now.Year(), now.Month(), now.Day(), 0, 0, 0, 0, now.Location())
-	durationCurrentDay := fmt.Sprintf("%.0fh", now.Sub(startOfDay).Hours())
+	durationCurrentDay := getDurationString(now, startOfDay)
+	if durationCurrentDay == "" {
+		return 0, 0, nil
+	}
 	return c.queryTrafficForDuration(labels, durationCurrentDay, now)
-
-}
-
-func (c *Client) QueryRange(query string, now, start, end time.Time, step time.Duration) (result float64, err error) {
-	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
-	defer cancel()
-
-	queryResult, warnings, err := c.api.QueryRange(ctx, query, promv1.Range{
-		Start: start,
-		End:   end,
-		Step:  step, // Step 可以设置为一天来确保只取一个值
-	})
-	if err != nil {
-		return 0, fmt.Errorf("Failed to query yesterday transmit bytes: %v", err)
-	}
-	if len(warnings) > 0 {
-		log.Printf("Warnings: %v", warnings)
-	}
-
-	if queryResult.Type() == model.ValMatrix && queryResult.(model.Matrix).Len() > 0 {
-		lastValue := queryResult.(model.Matrix)[0].Values[len(queryResult.(model.Matrix)[0].Values)-1]
-		result = float64(lastValue.Value)
-	}
-	return result, nil
 }
 
 func (c *Client) GetYesterdayTraffic(labels model.Metric, now time.Time) (float64, float64, error) {
-	yesterday := now.Add(-24 * time.Hour)
-	startOfYesterday := time.Date(yesterday.Year(), yesterday.Month(), yesterday.Day(), 0, 0, 0, 0, now.Location())
-	endOfYesterday := time.Date(now.Year(), now.Month(), now.Day(), 0, 0, 0, 0, now.Location()).Add(-time.Second)
-	step := time.Hour * 24 // Step 可以设置为一天来确保只取一个值
-	labelMatchers := BuildLabelMatchers(labels)
-
-	transmitQuery := "sum(increase(node_network_transmit_bytes_total{device=~\"eth.*|ens.*|eno.*|enp.*|enx.*|enX.*|wlan.*|venet.*\"}[1d]))"
-	receiveQuery := "sum(increase(node_network_receive_bytes_total{device=~\"eth.*|ens.*|eno.*|enp.*|enx.*|enX.*|wlan.*|venet.*\"}[1d]))"
-
-	if len(labelMatchers) != 0 {
-		transmitQuery = fmt.Sprintf("sum(increase(node_network_transmit_bytes_total{%s, device=~\"eth.*|ens.*|eno.*|enp.*|enx.*|enX.*|wlan.*|venet.*\"}[1d]))", labelMatchers)
-		receiveQuery = fmt.Sprintf("sum(increase(node_network_receive_bytes_total{%s, device=~\"eth.*|ens.*|eno.*|enp.*|enx.*|enX.*|wlan.*|venet.*\"}[1d]))", labelMatchers)
-	}
-
-	transmitResult, err := c.QueryRange(transmitQuery, now, startOfYesterday, endOfYesterday, step)
-	if err != nil {
-		return 0, 0, fmt.Errorf("failed to query yesterday transmit bytes: %v", err)
-	}
-
-	receiveResult, err := c.QueryRange(receiveQuery, now, startOfYesterday, endOfYesterday, step)
-	if err != nil {
-		return 0, 0, fmt.Errorf("failed to query yesterday transmit bytes: %v", err)
-	}
-
-	return transmitResult, receiveResult, nil
+	startOfToday := time.Date(now.Year(), now.Month(), now.Day(), 0, 0, 0, 0, now.Location())
+	return c.queryTrafficForDuration(labels, "1d", startOfToday)
 }
 
 func (c *Client) GetNaturalMonthTraffic(labels model.Metric, now time.Time) (transmitBytes float64, receiveBytes float64, err error) {
 	startOfMonth := time.Date(now.Year(), now.Month(), 1, 0, 0, 0, 0, now.Location())
-	durationCurrentMonth := fmt.Sprintf("%.0fh", now.Sub(startOfMonth).Hours())
+	durationCurrentMonth := getDurationString(now, startOfMonth)
+	if durationCurrentMonth == "" {
+		return 0, 0, nil
+	}
 	return c.queryTrafficForDuration(labels, durationCurrentMonth, now)
 }
 
@@ -498,7 +503,7 @@ func (c *Client) QueryNetworkRate(labels model.Metric, now time.Time) (uploadRat
 // GetHighestCpuUsageInstance 返回CPU使用率最高的实例名称和使用率值
 func (c *Client) GetHighestCpuUsageInstance(now time.Time) (string, float64, error) {
 	query := `topk(1, (1 - avg by (instance) (rate(node_cpu_seconds_total{mode="idle"}[5m]))) * 100)`
-	
+
 	result, err := c.QueryPrometheus(query, now)
 	if err != nil {
 		return "", 0, fmt.Errorf("Failed to query highest CPU usage instance: %v", err)
@@ -709,8 +714,11 @@ func (c *Client) GetHighestTotalTrafficInstance(now time.Time) (string, float64,
 // GetHighestDailyUploadTrafficInstance returns the instance with the highest upload traffic in the current day
 func (c *Client) GetHighestDailyUploadTrafficInstance(now time.Time) (string, float64, error) {
 	startOfDay := time.Date(now.Year(), now.Month(), now.Day(), 0, 0, 0, 0, now.Location())
-	durationCurrentDay := fmt.Sprintf("%.0fh", now.Sub(startOfDay).Hours())
-	
+	durationCurrentDay := getDurationString(now, startOfDay)
+	if durationCurrentDay == "" {
+		return "", 0, nil
+	}
+
 	query := fmt.Sprintf(`topk(1, sum by (instance) (increase(node_network_transmit_bytes_total{device=~"eth.*|ens.*|eno.*|enp.*|enx.*|enX.*|wlan.*|venet.*"}[%s])))`, durationCurrentDay)
 
 	result, err := c.QueryPrometheus(query, now)
@@ -735,8 +743,11 @@ func (c *Client) GetHighestDailyUploadTrafficInstance(now time.Time) (string, fl
 // GetHighestDailyDownloadTrafficInstance returns the instance with the highest download traffic in the current day
 func (c *Client) GetHighestDailyDownloadTrafficInstance(now time.Time) (string, float64, error) {
 	startOfDay := time.Date(now.Year(), now.Month(), now.Day(), 0, 0, 0, 0, now.Location())
-	durationCurrentDay := fmt.Sprintf("%.0fh", now.Sub(startOfDay).Hours())
-	
+	durationCurrentDay := getDurationString(now, startOfDay)
+	if durationCurrentDay == "" {
+		return "", 0, nil
+	}
+
 	query := fmt.Sprintf(`topk(1, sum by (instance) (increase(node_network_receive_bytes_total{device=~"eth.*|ens.*|eno.*|enp.*|enx.*|enX.*|wlan.*|venet.*"}[%s])))`, durationCurrentDay)
 
 	result, err := c.QueryPrometheus(query, now)
@@ -761,7 +772,10 @@ func (c *Client) GetHighestDailyDownloadTrafficInstance(now time.Time) (string, 
 // GetHighestDailyTotalTrafficInstance returns the instance with the highest total traffic in the current day
 func (c *Client) GetHighestDailyTotalTrafficInstance(now time.Time) (string, float64, error) {
 	startOfDay := time.Date(now.Year(), now.Month(), now.Day(), 0, 0, 0, 0, now.Location())
-	durationCurrentDay := fmt.Sprintf("%.0fh", now.Sub(startOfDay).Hours())
+	durationCurrentDay := getDurationString(now, startOfDay)
+	if durationCurrentDay == "" {
+		return "", 0, nil
+	}
 
 	// 先查询上传流量
 	queryUpload := fmt.Sprintf(`sum by (instance) (increase(node_network_transmit_bytes_total{device=~"eth.*|ens.*|eno.*|enp.*|enx.*|enX.*|wlan.*|venet.*"}[%s]))`, durationCurrentDay)
@@ -814,8 +828,11 @@ func (c *Client) GetHighestDailyTotalTrafficInstance(now time.Time) (string, flo
 // GetHighestMonthlyUploadTrafficInstance returns the instance with the highest upload traffic in the current month
 func (c *Client) GetHighestMonthlyUploadTrafficInstance(now time.Time) (string, float64, error) {
 	startOfMonth := time.Date(now.Year(), now.Month(), 1, 0, 0, 0, 0, now.Location())
-	durationCurrentMonth := fmt.Sprintf("%.0fh", now.Sub(startOfMonth).Hours())
-	
+	durationCurrentMonth := getDurationString(now, startOfMonth)
+	if durationCurrentMonth == "" {
+		return "", 0, nil
+	}
+
 	query := fmt.Sprintf(`topk(1, sum by (instance) (increase(node_network_transmit_bytes_total{device=~"eth.*|ens.*|eno.*|enp.*|enx.*|enX.*|wlan.*|venet.*"}[%s])))`, durationCurrentMonth)
 
 	result, err := c.QueryPrometheus(query, now)
@@ -840,8 +857,11 @@ func (c *Client) GetHighestMonthlyUploadTrafficInstance(now time.Time) (string, 
 // GetHighestMonthlyDownloadTrafficInstance returns the instance with the highest download traffic in the current month
 func (c *Client) GetHighestMonthlyDownloadTrafficInstance(now time.Time) (string, float64, error) {
 	startOfMonth := time.Date(now.Year(), now.Month(), 1, 0, 0, 0, 0, now.Location())
-	durationCurrentMonth := fmt.Sprintf("%.0fh", now.Sub(startOfMonth).Hours())
-	
+	durationCurrentMonth := getDurationString(now, startOfMonth)
+	if durationCurrentMonth == "" {
+		return "", 0, nil
+	}
+
 	query := fmt.Sprintf(`topk(1, sum by (instance) (increase(node_network_receive_bytes_total{device=~"eth.*|ens.*|eno.*|enp.*|enx.*|enX.*|wlan.*|venet.*"}[%s])))`, durationCurrentMonth)
 
 	result, err := c.QueryPrometheus(query, now)
@@ -866,7 +886,10 @@ func (c *Client) GetHighestMonthlyDownloadTrafficInstance(now time.Time) (string
 // GetHighestMonthlyTotalTrafficInstance returns the instance with the highest total traffic in the current month
 func (c *Client) GetHighestMonthlyTotalTrafficInstance(now time.Time) (string, float64, error) {
 	startOfMonth := time.Date(now.Year(), now.Month(), 1, 0, 0, 0, 0, now.Location())
-	durationCurrentMonth := fmt.Sprintf("%.0fh", now.Sub(startOfMonth).Hours())
+	durationCurrentMonth := getDurationString(now, startOfMonth)
+	if durationCurrentMonth == "" {
+		return "", 0, nil
+	}
 
 	// 先查询上传流量
 	queryUpload := fmt.Sprintf(`sum by (instance) (increase(node_network_transmit_bytes_total{device=~"eth.*|ens.*|eno.*|enp.*|enx.*|enX.*|wlan.*|venet.*"}[%s]))`, durationCurrentMonth)
@@ -1067,4 +1090,98 @@ func FormatBytes(bytes float64) string {
 	default:
 		return fmt.Sprintf("%.2f B", bytes)
 	}
+}
+
+func getDurationString(now, start time.Time) string {
+	duration := now.Sub(start)
+	if duration < time.Second {
+		return ""
+	}
+	return fmt.Sprintf("%ds", int(duration.Seconds()))
+}
+
+// calculateActualExpiryDate calculates the actual expiry date based on the original expiry date and the cycle
+func calculateActualExpiryDate(originalExpiry time.Time, cycleStr string, now time.Time) time.Time {
+	// If the current time hasn't reached the original expiry date, return the original
+	if !now.After(originalExpiry) {
+		return originalExpiry
+	}
+
+	// Parse the cycle string to determine the renewal period
+	switch cycleStr {
+	case "1year":
+		// Add 1 year to the original expiry date until we reach a date in the future
+		// Start from the original expiry date
+		adjustedExpiry := originalExpiry
+		for adjustedExpiry.Before(now) || adjustedExpiry.Equal(now.Truncate(24*time.Hour)) {
+			adjustedExpiry = adjustedExpiry.AddDate(1, 0, 0)
+		}
+		return adjustedExpiry
+	case "1month":
+		// Add 1 month to the original expiry date until we reach a date in the future
+		adjustedExpiry := originalExpiry
+		for adjustedExpiry.Before(now) || adjustedExpiry.Equal(now.Truncate(24*time.Hour)) {
+			adjustedExpiry = adjustedExpiry.AddDate(0, 1, 0)
+		}
+		return adjustedExpiry
+	case "3month":
+		// Add 3 months to the original expiry date until we reach a date in the future
+		adjustedExpiry := originalExpiry
+		for adjustedExpiry.Before(now) || adjustedExpiry.Equal(now.Truncate(24*time.Hour)) {
+			adjustedExpiry = adjustedExpiry.AddDate(0, 3, 0)
+		}
+		return adjustedExpiry
+	case "6month":
+		// Add 6 months to the original expiry date until we reach a date in the future
+		adjustedExpiry := originalExpiry
+		for adjustedExpiry.Before(now) || adjustedExpiry.Equal(now.Truncate(24*time.Hour)) {
+			adjustedExpiry = adjustedExpiry.AddDate(0, 6, 0)
+		}
+		return adjustedExpiry
+	default:
+		// If the cycle is not recognized, return the original expiry date
+		return originalExpiry
+	}
+}
+
+// convertCycleToFriendlyText converts cycle values to friendly Chinese descriptions
+func convertCycleToFriendlyText(cycleStr string) string {
+	switch cycleStr {
+	case "1year":
+		return "1年付"
+	case "1month":
+		return "1月付"
+	case "3month":
+		return "3月付"
+	case "6month":
+		return "6月付"
+	case "3year":
+		return "3年付"
+	default:
+		// If the cycle is not recognized, return the original string
+		return cycleStr
+	}
+}
+
+// calculateTimeDifference computes the difference between two times in years, months, and days
+func calculateTimeDifference(start, end time.Time) (int, int, int) {
+	years := end.Year() - start.Year()
+	months := int(end.Month() - start.Month())
+	days := end.Day() - start.Day()
+
+	// Adjust for negative days
+	if days < 0 {
+		months--
+		// Get the last day of the previous month
+		previousMonth := end.AddDate(0, 0, -end.Day())
+		days = previousMonth.Day() + days
+	}
+
+	// Adjust for negative months
+	if months < 0 {
+		years--
+		months += 12
+	}
+
+	return years, months, days
 }
