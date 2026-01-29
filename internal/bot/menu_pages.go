@@ -96,7 +96,7 @@ func (b *BotInstance) instanceOverviewMenuPage(chatID int64, messageID int) tgbo
 		log.Printf("failed to get highest upload traffic instance: %v", err)
 		menuTitle += fmt.Sprintf("  上传: %s\n", prometheus.FormatBytes(yesterdayTransmitBytes))
 	} else if highestUploadInstance != "" {
-		menuTitle += fmt.Sprintf("  上传: %s（最多：%s (%s)）\n", prometheus.FormatBytes(yesterdayTransmitBytes), highestUploadInstance, prometheus.FormatBytes(highestUploadValue))
+		menuTitle += fmt.Sprintf("  上传: %s（最多：%s (%s)）\n", prometheus.FormatBytes(yesterdayTransmitBytes), truncateString(highestUploadInstance, 30), prometheus.FormatBytes(highestUploadValue))
 	} else {
 		menuTitle += fmt.Sprintf("  上传: %s\n", prometheus.FormatBytes(yesterdayTransmitBytes))
 	}
@@ -107,7 +107,7 @@ func (b *BotInstance) instanceOverviewMenuPage(chatID int64, messageID int) tgbo
 		log.Printf("failed to get highest download traffic instance: %v", err)
 		menuTitle += fmt.Sprintf("  下载: %s\n", prometheus.FormatBytes(yesterdayReceiveBytes))
 	} else if highestDownloadInstance != "" {
-		menuTitle += fmt.Sprintf("  下载: %s（最多：%s (%s)）\n", prometheus.FormatBytes(yesterdayReceiveBytes), highestDownloadInstance, prometheus.FormatBytes(highestDownloadValue))
+		menuTitle += fmt.Sprintf("  下载: %s（最多：%s (%s)）\n", prometheus.FormatBytes(yesterdayReceiveBytes), truncateString(highestDownloadInstance, 30), prometheus.FormatBytes(highestDownloadValue))
 	} else {
 		menuTitle += fmt.Sprintf("  下载: %s\n", prometheus.FormatBytes(yesterdayReceiveBytes))
 	}
@@ -118,7 +118,7 @@ func (b *BotInstance) instanceOverviewMenuPage(chatID int64, messageID int) tgbo
 		log.Printf("failed to get highest total traffic instance: %v", err)
 		menuTitle += fmt.Sprintf("  总共: %s\n", prometheus.FormatBytes(yesterdayTotalBytes))
 	} else if highestTotalInstance != "" {
-		menuTitle += fmt.Sprintf("  总共: %s（最多：%s (%s)）\n", prometheus.FormatBytes(yesterdayTotalBytes), highestTotalInstance, prometheus.FormatBytes(highestTotalValue))
+		menuTitle += fmt.Sprintf("  总共: %s（最多：%s (%s)）\n", prometheus.FormatBytes(yesterdayTotalBytes), truncateString(highestTotalInstance, 30), prometheus.FormatBytes(highestTotalValue))
 	} else {
 		menuTitle += fmt.Sprintf("  总共: %s\n", prometheus.FormatBytes(yesterdayTotalBytes))
 	}
@@ -147,7 +147,7 @@ func (b *BotInstance) instanceOverviewMenuPage(chatID int64, messageID int) tgbo
 		log.Printf("failed to get highest daily upload traffic instance: %v", err)
 		menuTitle += fmt.Sprintf("  上传: %s\n", prometheus.FormatBytes(transmitBytes))
 	} else if dailyTransmitInstance != "" {
-		menuTitle += fmt.Sprintf("  上传: %s（最多：%s (%s)）\n", prometheus.FormatBytes(transmitBytes), dailyTransmitInstance, prometheus.FormatBytes(dailyTransmitValue))
+		menuTitle += fmt.Sprintf("  上传: %s（最多：%s (%s)）\n", prometheus.FormatBytes(transmitBytes), truncateString(dailyTransmitInstance, 30), prometheus.FormatBytes(dailyTransmitValue))
 	} else {
 		menuTitle += fmt.Sprintf("  上传: %s\n", prometheus.FormatBytes(transmitBytes))
 	}
@@ -158,7 +158,7 @@ func (b *BotInstance) instanceOverviewMenuPage(chatID int64, messageID int) tgbo
 		log.Printf("failed to get highest daily download traffic instance: %v", err)
 		menuTitle += fmt.Sprintf("  下载: %s\n", prometheus.FormatBytes(receiveBytes))
 	} else if dailyReceiveInstance != "" {
-		menuTitle += fmt.Sprintf("  下载: %s（最多：%s (%s)）\n", prometheus.FormatBytes(receiveBytes), dailyReceiveInstance, prometheus.FormatBytes(dailyReceiveValue))
+		menuTitle += fmt.Sprintf("  下载: %s（最多：%s (%s)）\n", prometheus.FormatBytes(receiveBytes), truncateString(dailyReceiveInstance, 30), prometheus.FormatBytes(dailyReceiveValue))
 	} else {
 		menuTitle += fmt.Sprintf("  下载: %s\n", prometheus.FormatBytes(receiveBytes))
 	}
@@ -169,7 +169,7 @@ func (b *BotInstance) instanceOverviewMenuPage(chatID int64, messageID int) tgbo
 		log.Printf("failed to get highest daily total traffic instance: %v", err)
 		menuTitle += fmt.Sprintf("  总共: %s\n", prometheus.FormatBytes(dailyTotalBytes))
 	} else if dailyTotalInstance != "" {
-		menuTitle += fmt.Sprintf("  总共: %s（最多：%s (%s)）\n", prometheus.FormatBytes(dailyTotalBytes), dailyTotalInstance, prometheus.FormatBytes(dailyTotalValue))
+		menuTitle += fmt.Sprintf("  总共: %s（最多：%s (%s)）\n", prometheus.FormatBytes(dailyTotalBytes), truncateString(dailyTotalInstance, 30), prometheus.FormatBytes(dailyTotalValue))
 	} else {
 		menuTitle += fmt.Sprintf("  总共: %s\n", prometheus.FormatBytes(dailyTotalBytes))
 	}
@@ -192,7 +192,7 @@ func (b *BotInstance) instanceOverviewMenuPage(chatID int64, messageID int) tgbo
 		log.Printf("failed to get highest monthly upload traffic instance: %v", err)
 		menuTitle += fmt.Sprintf("  上传: %s\n", prometheus.FormatBytes(naturalMonthTransmitBytes))
 	} else if monthlyTransmitInstance != "" {
-		menuTitle += fmt.Sprintf("  上传: %s（最多：%s (%s)）\n", prometheus.FormatBytes(naturalMonthTransmitBytes), monthlyTransmitInstance, prometheus.FormatBytes(monthlyTransmitValue))
+		menuTitle += fmt.Sprintf("  上传: %s（最多：%s (%s)）\n", prometheus.FormatBytes(naturalMonthTransmitBytes), truncateString(monthlyTransmitInstance, 30), prometheus.FormatBytes(monthlyTransmitValue))
 	} else {
 		menuTitle += fmt.Sprintf("  上传: %s\n", prometheus.FormatBytes(naturalMonthTransmitBytes))
 	}
@@ -203,7 +203,7 @@ func (b *BotInstance) instanceOverviewMenuPage(chatID int64, messageID int) tgbo
 		log.Printf("failed to get highest monthly download traffic instance: %v", err)
 		menuTitle += fmt.Sprintf("  下载: %s\n", prometheus.FormatBytes(naturalMonthReceiveBytes))
 	} else if monthlyReceiveInstance != "" {
-		menuTitle += fmt.Sprintf("  下载: %s（最多：%s (%s)）\n", prometheus.FormatBytes(naturalMonthReceiveBytes), monthlyReceiveInstance, prometheus.FormatBytes(monthlyReceiveValue))
+		menuTitle += fmt.Sprintf("  下载: %s（最多：%s (%s)）\n", prometheus.FormatBytes(naturalMonthReceiveBytes), truncateString(monthlyReceiveInstance, 30), prometheus.FormatBytes(monthlyReceiveValue))
 	} else {
 		menuTitle += fmt.Sprintf("  下载: %s\n", prometheus.FormatBytes(naturalMonthReceiveBytes))
 	}
@@ -214,7 +214,7 @@ func (b *BotInstance) instanceOverviewMenuPage(chatID int64, messageID int) tgbo
 		log.Printf("failed to get highest monthly total traffic instance: %v", err)
 		menuTitle += fmt.Sprintf("  总共: %s\n", prometheus.FormatBytes(naturalMonthTotalBytes))
 	} else if monthlyTotalInstance != "" {
-		menuTitle += fmt.Sprintf("  总共: %s（最多：%s (%s)）\n", prometheus.FormatBytes(naturalMonthTotalBytes), monthlyTotalInstance, prometheus.FormatBytes(monthlyTotalValue))
+		menuTitle += fmt.Sprintf("  总共: %s（最多：%s (%s)）\n", prometheus.FormatBytes(naturalMonthTotalBytes), truncateString(monthlyTotalInstance, 30), prometheus.FormatBytes(monthlyTotalValue))
 	} else {
 		menuTitle += fmt.Sprintf("  总共: %s\n", prometheus.FormatBytes(naturalMonthTotalBytes))
 	}
@@ -228,7 +228,7 @@ func (b *BotInstance) instanceOverviewMenuPage(chatID int64, messageID int) tgbo
 		log.Printf("failed to get highest upload rate instance: %v", err)
 		menuTitle += fmt.Sprintf("  上传: %s/s\n", prometheus.FormatBytesPerSecond(uploadRate))
 	} else if highestUploadRateInstance != "" {
-		menuTitle += fmt.Sprintf("  上传: %s/s（最多：%s (%s/s)）\n", prometheus.FormatBytesPerSecond(uploadRate), highestUploadRateInstance, prometheus.FormatBytesPerSecond(highestUploadRateValue))
+		menuTitle += fmt.Sprintf("  上传: %s/s（最多：%s (%s/s)）\n", prometheus.FormatBytesPerSecond(uploadRate), truncateString(highestUploadRateInstance, 30), prometheus.FormatBytesPerSecond(highestUploadRateValue))
 	} else {
 		menuTitle += fmt.Sprintf("  上传: %s/s\n", prometheus.FormatBytesPerSecond(uploadRate))
 	}
@@ -239,7 +239,7 @@ func (b *BotInstance) instanceOverviewMenuPage(chatID int64, messageID int) tgbo
 		log.Printf("failed to get highest download rate instance: %v", err)
 		menuTitle += fmt.Sprintf("  下载: %s/s\n", prometheus.FormatBytesPerSecond(downloadRate))
 	} else if highestDownloadRateInstance != "" {
-		menuTitle += fmt.Sprintf("  下载: %s/s（最多：%s (%s/s)）\n", prometheus.FormatBytesPerSecond(downloadRate), highestDownloadRateInstance, prometheus.FormatBytesPerSecond(highestDownloadRateValue))
+		menuTitle += fmt.Sprintf("  下载: %s/s（最多：%s (%s/s)）\n", prometheus.FormatBytesPerSecond(downloadRate), truncateString(highestDownloadRateInstance, 30), prometheus.FormatBytesPerSecond(highestDownloadRateValue))
 	} else {
 		menuTitle += fmt.Sprintf("  下载: %s/s\n", prometheus.FormatBytesPerSecond(downloadRate))
 	}
@@ -257,7 +257,7 @@ func (b *BotInstance) instanceOverviewMenuPage(chatID int64, messageID int) tgbo
 		log.Printf("failed to get highest CPU usage instance: %v", err)
 		menuTitle += fmt.Sprintf("  CPU 使用率: %.2f%%\n", cpuUsage)
 	} else if highestCpuInstance != "" {
-		menuTitle += fmt.Sprintf("  CPU 使用率: %.2f%%（最多：%s (%.2f%%)）\n", cpuUsage, highestCpuInstance, highestCpuValue)
+		menuTitle += fmt.Sprintf("  CPU 使用率: %.2f%%（最多：%s (%.2f%%)）\n", cpuUsage, truncateString(highestCpuInstance, 30), highestCpuValue)
 	} else {
 		menuTitle += fmt.Sprintf("  CPU 使用率: %.2f%%\n", cpuUsage)
 	}
@@ -268,7 +268,7 @@ func (b *BotInstance) instanceOverviewMenuPage(chatID int64, messageID int) tgbo
 		log.Printf("failed to get highest memory usage instance: %v", err2)
 		menuTitle += fmt.Sprintf("  内存使用率: %.2f%%\n", memoryUsage)
 	} else if highestMemoryInstance != "" {
-		menuTitle += fmt.Sprintf("  内存使用率: %.2f%%（最多：%s (%.2f%%)）\n", memoryUsage, highestMemoryInstance, highestMemoryValue)
+		menuTitle += fmt.Sprintf("  内存使用率: %.2f%%（最多：%s (%.2f%%)）\n", memoryUsage, truncateString(highestMemoryInstance, 30), highestMemoryValue)
 	} else {
 		menuTitle += fmt.Sprintf("  内存使用率: %.2f%%\n", memoryUsage)
 	}
@@ -279,9 +279,15 @@ func (b *BotInstance) instanceOverviewMenuPage(chatID int64, messageID int) tgbo
 		log.Printf("failed to get highest disk usage instance: %v", err3)
 		menuTitle += fmt.Sprintf("  磁盘使用率: %.2f%%\n", diskUsage)
 	} else if highestDiskInstance != "" {
-		menuTitle += fmt.Sprintf("  磁盘使用率: %.2f%%（最多：%s (%.2f%%)）\n", diskUsage, highestDiskInstance, highestDiskValue)
+		menuTitle += fmt.Sprintf("  磁盘使用率: %.2f%%（最多：%s (%.2f%%)）\n", diskUsage, truncateString(highestDiskInstance, 30), highestDiskValue)
 	} else {
 		menuTitle += fmt.Sprintf("  磁盘使用率: %.2f%%\n", diskUsage)
+	}
+
+	// Ensure menuTitle is not too long
+	if len(menuTitle) > 4000 {
+		menuTitle = truncateString(menuTitle, 4000)
+		menuTitle += "\n\n(Response truncated due to length limit)"
 	}
 
 	menuItems := []MenuItem{
@@ -491,9 +497,9 @@ func (b *BotInstance) instanceDetailTableMenuPage(chatID int64, messageID int, p
 		}
 
 		// 格式化实例名称和规格信息
-		formattedName := name
+		formattedName := truncateString(name, 30)
 		if specInfo != "" {
-			formattedName = fmt.Sprintf("%s(%s)", name, specInfo)
+			formattedName = fmt.Sprintf("%s(%s)", formattedName, truncateString(specInfo, 20))
 		}
 
 		// 获取实例的真实信息
@@ -797,6 +803,12 @@ func (b *BotInstance) instanceInfoPage(chatID int64, messageID int, instanceName
 	rows := b.generateMenuRows(menuItems)
 	keyboard := tgbotapi.NewInlineKeyboardMarkup(rows...)
 
+	// Truncate info if too long
+	if len(info) > 4000 {
+		info = truncateString(info, 4000)
+		info += "\n\n(Response truncated)"
+	}
+
 	if messageID == 0 {
 		msg := tgbotapi.NewMessage(chatID, info)
 		msg.ReplyMarkup = keyboard
@@ -867,10 +879,11 @@ func extractValueFromSection(text, sectionTitle, valueTitle string) string {
 
 // 辅助函数：截断字符串以适应表格列宽
 func truncateString(s string, maxLength int) string {
-	if len(s) <= maxLength {
+	runes := []rune(s)
+	if len(runes) <= maxLength {
 		return s
 	}
-	return s[:maxLength]
+	return string(runes[:maxLength]) + "..."
 }
 
 // 辅助函数：转义HTML特殊字符

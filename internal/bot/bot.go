@@ -117,6 +117,7 @@ func (b *BotInstance) editMenuPage(chatID int64, messageID int, menuID string, p
 	case otherMenuID:
 		return b.otherMenuPage(chatID, messageID)
 	case instanceDetailTableMenuID: // 新增：处理实例详情表菜单
+		// Pass page explicitly
 		return b.instanceDetailTableMenuPage(chatID, messageID, page)
 	default:
 		if strings.HasPrefix(menuID, "instance_info:") {
